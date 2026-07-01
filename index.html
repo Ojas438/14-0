@@ -46,22 +46,35 @@
   /* team-coloured background (set --bgc / --bgc2 via the Background picker) */
   body.themed{
     background:
-      radial-gradient(120% 82% at 14% -10%, color-mix(in srgb, var(--bgc) 32%, #0a1322) 0%, transparent 56%),
-      radial-gradient(120% 82% at 86% 112%, color-mix(in srgb, var(--bgc2) 28%, #0a1322) 0%, transparent 56%),
-      linear-gradient(160deg, color-mix(in srgb, var(--bgc) 13%, #0a1120), #0a111e 56%, var(--night)) fixed,
+      radial-gradient(120% 88% at 12% -12%, color-mix(in srgb, var(--bgc) 68%, #060c18) 0%, transparent 60%),
+      radial-gradient(120% 88% at 88% 114%, color-mix(in srgb, var(--bgc2) 62%, #060c18) 0%, transparent 60%),
+      linear-gradient(155deg, color-mix(in srgb, var(--bgc) 30%, #070d1b), #0a1120 52%, color-mix(in srgb, var(--bgc2) 20%, #070d1b)) fixed,
       var(--night);
   }
   body.themed::before{
     background:
-      radial-gradient(60% 34% at 18% -6%, color-mix(in srgb, var(--bgc) 42%, transparent), transparent 62%),
-      radial-gradient(62% 42% at 84% 116%, color-mix(in srgb, var(--bgc2) 36%, transparent), transparent 60%);
+      radial-gradient(58% 36% at 16% -8%, color-mix(in srgb, var(--bgc) 78%, transparent), transparent 66%),
+      radial-gradient(60% 44% at 86% 118%, color-mix(in srgb, var(--bgc2) 70%, transparent), transparent 64%),
+      conic-gradient(from 200deg at 50% -20%, transparent, color-mix(in srgb, var(--bgc) 22%, transparent) 18%, transparent 40%);
+    mix-blend-mode:screen;
   }
-  /* giant faded team monogram watermark */
+  /* original team crest emblem watermark (roundel + monogram, not a real logo) */
   .bg-mono{position:fixed;inset:0;z-index:0;display:none;align-items:center;justify-content:center;pointer-events:none;overflow:hidden}
-  .bg-mono span{font-family:'Anton',sans-serif;font-size:46vw;line-height:.78;letter-spacing:-.03em;white-space:nowrap;
-    color:var(--bgc);opacity:.07;text-shadow:0 0 70px color-mix(in srgb,var(--bgc) 45%, transparent)}
+  .bg-crest{position:relative;display:flex;align-items:center;justify-content:center;
+    width:72vw;height:72vw;max-width:520px;max-height:520px;border-radius:50%;
+    background:radial-gradient(circle at 50% 34%, color-mix(in srgb,var(--bgc) 30%, transparent), transparent 70%);
+    box-shadow:0 0 0 .7vw color-mix(in srgb,var(--bgc) 24%, transparent),
+      0 0 0 1.1vw color-mix(in srgb,var(--bgc2) 20%, transparent),
+      inset 0 0 90px color-mix(in srgb,var(--bgc) 24%, transparent);
+    opacity:.16;filter:drop-shadow(0 0 40px color-mix(in srgb,var(--bgc) 40%, transparent))}
+  .bg-crest::before,.bg-crest::after{content:"";position:absolute;left:50%;top:50%;width:118%;height:14%;
+    transform:translate(-50%,-50%) rotate(var(--rot,0deg));
+    background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--bgc2) 60%,transparent),transparent)}
+  .bg-crest::before{--rot:-30deg}.bg-crest::after{--rot:30deg}
+  .bg-crest span{position:relative;font-family:'Anton',sans-serif;font-size:26vw;line-height:.78;letter-spacing:-.03em;white-space:nowrap;
+    color:var(--bgc);text-shadow:0 0 60px color-mix(in srgb,var(--bgc) 60%, transparent)}
   body.themed .bg-mono{display:flex}
-  @media (min-width:620px){.bg-mono span{font-size:290px}}
+  @media (min-width:620px){.bg-crest span{font-size:150px}}
   .wrap{position:relative;z-index:1;max-width:var(--maxw);margin:0 auto;padding:28px 18px 64px;min-height:100%}
   .screen{display:none}
   .screen.on{display:block;animation:rise .45s cubic-bezier(.2,.7,.2,1) both}
@@ -1704,7 +1717,7 @@ function setBg(k){
     document.body.classList.add('themed');
     document.body.style.setProperty('--bgc',FR[k].c);
     document.body.style.setProperty('--bgc2',bg2(k));
-    mono.innerHTML=`<span>${k}</span>`;
+    mono.innerHTML=`<div class="bg-crest"><span>${k}</span></div>`;
   }else{
     document.body.classList.remove('themed');
     document.body.style.removeProperty('--bgc');
