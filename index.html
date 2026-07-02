@@ -1867,19 +1867,28 @@ function hasPlayers(f,e){return eligible(f,e).length>0;}
 
 /* ---- title ---- */
 const MODE_HINT={overall:"See a single overall rating (0–100) for each player.",stats:"See each player's best-season stat line as you draft.",blind:"No numbers at all — draft on memory and instinct."};
-function setMode(m){mode=m;document.querySelectorAll('#modeRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.m===m));$('modeHint').textContent=MODE_HINT[m];}
+function setMode(m){mode=m;document.querySelectorAll('#modeRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.m===m));$('modeHint').textContent=MODE_HINT[m];if(typeof renderDaily==='function')renderDaily();}
 let gameSpeed='normal';
 const SPEED={chill:1,normal:.6,fast:.32};
 const SPEED_HINT={chill:"Slow, detailed ball-by-ball call.",normal:"Balanced commentary pace.",fast:"Quick — skim through the games."};
 function setSpeed(s){gameSpeed=s;document.querySelectorAll('#speedRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.sp===s));$('speedHint').textContent=SPEED_HINT[s];}
 
 /* ---- daily challenge (deterministic same-draft-for-everyone) + local leaderboard ---- */
-const DKEY='14-0-daily-v1';
+const DKEY='14-0-daily-v2'; // v2: results scoped per game mode { mode: { dateKey: result } }
 const OUT_RANK={champ:5,runner:4,lostQ2:3,lostElim:2,missed:1};
+const MODE_NAME={overall:'Overalls',stats:'Season stats',blind:'No stats'};
 function dateKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function todayKey(){return dateKey(new Date());}
-function loadDaily(){try{return JSON.parse(localStorage.getItem(DKEY))||{}}catch(e){return{}}}
+function loadDaily(){
+  let d=null; try{d=JSON.parse(localStorage.getItem(DKEY));}catch(e){}
+  if(!d){ // migrate old flat v1 history into the 'stats' mode bucket
+    let old=null; try{old=JSON.parse(localStorage.getItem('14-0-daily-v1'));}catch(e){}
+    d = (old&&Object.keys(old).length) ? {stats:old} : {}; storeDaily(d);
+  }
+  return d;
+}
 function storeDaily(d){try{localStorage.setItem(DKEY,JSON.stringify(d))}catch(e){}}
+function modeOf(){return {overall:'overall',stats:'stats',blind:'blind'}[mode]||'stats';}
 function bucketRoles(f,e){const c={BAT:0,BOWL:0,AR:0};for(const p of P){if(p.teams[f]&&p.teams[f].includes(e))c[roleGroup(p)]++;}return c;}
 // same draws for everyone today: 11 distinct role-rich buckets + deterministic skip alternates.
 // picks are free (any player, normal 5/4/2 rule); role-rich buckets guarantee no dead-ends.
@@ -1913,11 +1922,11 @@ function betterDaily(a,b){
   return (a.rating||0)>(b.rating||0);
 }
 function saveDailyResult(s){
-  const data=loadDaily(), k=todayKey(), prev=data[k];
+  const data=loadDaily(), m=modeOf(), bucket=data[m]||(data[m]={}), k=todayKey(), prev=bucket[k];
   const e={wins:s.wins,losses:s.losses,outcome:s.outcome,rating:s.rating,team:myTeam};
   const keep=betterDaily(e,prev)?e:prev;
   keep.attempts=((prev&&prev.attempts)||0)+1;
-  data[k]=keep; storeDaily(data); return data;
+  bucket[k]=keep; storeDaily(data); return data;
 }
 function dailyStreak(data){
   const has=k=>!!data[k]; let d=new Date();
@@ -1927,7 +1936,8 @@ function dailyStreak(data){
 function bestEver(data){let best=null;for(const k in data){if(betterDaily(data[k],best))best=data[k];}return best;}
 function renderDaily(){
   if(!$('dailyCard'))return;
-  const data=loadDaily(), today=data[todayKey()], streak=dailyStreak(data), best=bestEver(data);
+  const b=loadDaily()[modeOf()]||{}, today=b[todayKey()], streak=dailyStreak(b), best=bestEver(b);
+  $('dcSub').innerHTML=`Same draft &amp; skips for everyone today. <b style="color:var(--gold)">${MODE_NAME[modeOf()]}</b> records kept separately.`;
   const st=$('dcStreak');
   st.className='dc-streak'+(streak>0?'':' none');
   st.textContent=streak>0?`🔥 ${streak}-day streak`:'No streak yet';
