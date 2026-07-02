@@ -392,6 +392,26 @@
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   #confetti{position:fixed;inset:0;pointer-events:none;z-index:75;display:none}
 
+  /* ---------------- daily challenge ---------------- */
+  .daily-card{margin:0 0 22px;padding:18px 18px 16px;border-radius:16px;
+    background:linear-gradient(150deg,color-mix(in srgb,var(--gold) 16%,var(--deep)),var(--deep));
+    border:1px solid color-mix(in srgb,var(--gold) 38%,var(--line))}
+  .dc-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .dc-head{font-family:'Spline Sans Mono',monospace;font-weight:800;font-size:12px;letter-spacing:.16em;color:var(--gold)}
+  .dc-head .dc-cal{margin-right:4px}
+  .dc-streak{font-family:'Spline Sans Mono',monospace;font-weight:800;font-size:12.5px;color:#FFCF6B;
+    background:rgba(255,203,61,.12);border:1px solid rgba(255,203,61,.4);border-radius:20px;padding:4px 11px;white-space:nowrap}
+  .dc-streak.none{color:var(--mute);background:rgba(255,255,255,.03);border-color:var(--line)}
+  .dc-sub{color:var(--ink-dim);font-size:13px;line-height:1.5;margin:8px 0 12px}
+  .dc-stats{display:flex;gap:8px;margin-bottom:14px}
+  .dc-stats .dcs{flex:1;text-align:center;padding:10px 6px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
+  .dc-stats .dcs .v{font-family:'Anton',sans-serif;font-size:24px;line-height:1;color:var(--ink)}
+  .dc-stats .dcs .v.gold{color:var(--gold)}.dc-stats .dcs .v.dim{color:var(--mute)}
+  .dc-stats .dcs .k{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin-top:6px;font-weight:700}
+  #dcBtn.done{background:none;color:var(--turf);border:1px solid color-mix(in srgb,var(--turf) 45%,var(--line))}
+  .daily-tag{background:rgba(255,203,61,.1);border:1px solid rgba(255,203,61,.35);color:#FFCF6B;
+    font-size:12px;font-weight:700;text-align:center;padding:9px 12px;border-radius:11px;margin-bottom:14px}
+
   /* ---------------- share card overlay ---------------- */
   .share-ov{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
     background:rgba(4,8,16,.82);backdrop-filter:blur(6px);padding:20px}
@@ -541,6 +561,16 @@
     </div>
     <p class="lede" id="lede">Draft eleven legends across every IPL era, then run the gauntlet — fourteen league games, the playoffs, and one final shot at the trophy.</p>
 
+    <div class="daily-card" id="dailyCard">
+      <div class="dc-top">
+        <div class="dc-head"><span class="dc-cal">🗓</span> DAILY CHALLENGE</div>
+        <div class="dc-streak" id="dcStreak"></div>
+      </div>
+      <div class="dc-sub" id="dcSub">Everyone gets the same draft today. Build the best XI and chase 14–0.</div>
+      <div class="dc-stats" id="dcStats"></div>
+      <button class="btn btn-go" id="dcBtn" onclick="startDaily()">Play today's challenge →</button>
+    </div>
+
     <div class="card how">
       <h3>The campaign</h3>
       <div class="step"><span class="i">🎰</span><p id="howReel">Each round the reel locks a <b>franchise + era</b>. Draft any real player who turned out for them.</p></div>
@@ -611,6 +641,7 @@
       <button class="btn btn-ghost mini" onclick="resetGame()">↺ Restart</button>
     </div>
 
+    <div class="daily-tag" id="dailyTag" style="display:none">🗓 Daily Challenge — fixed draft for everyone today, no skips</div>
     <div class="dots" id="dots"></div>
     <div class="comp" id="comp"></div>
 
@@ -621,7 +652,7 @@
     </div>
 
     <button class="btn btn-go" id="spinBtn" style="margin-top:12px" onclick="spin()">Spin</button>
-    <div class="skips">
+    <div class="skips" id="skipsRow">
       <button class="btn btn-ghost" id="skT" onclick="reSpin('team')">↻ Franchise skip · <b id="skTn">1</b></button>
       <button class="btn btn-ghost" id="skE" onclick="reSpin('era')">↻ Era skip · <b id="skEn">1</b></button>
     </div>
@@ -1812,6 +1843,7 @@ function setBg(k){
 const $=id=>document.getElementById(id);
 function show(s){document.querySelectorAll('.screen').forEach(x=>x.classList.remove('on'));$(s).classList.add('on');
   document.body.classList.toggle('in-game', s!=='s-title');
+  if(s==='s-title'&&typeof renderDaily==='function')renderDaily();
   window.scrollTo({top:0});}
 function goHome(){
   const mid = state && state.xi && state.xi.length>0 && state.xi.length<PICKS && document.getElementById('s-draft').classList.contains('on');
@@ -1829,7 +1861,7 @@ function goHome(){
   show('s-title');
 }
 
-function fresh(){return{pick:0,xi:[],drafted:new Set(),current:null,skips:{team:1,era:1}};}
+function fresh(){return{pick:0,xi:[],drafted:new Set(),current:null,skips:{team:1,era:1},daily:false,plan:null,forceRole:null};}
 function eligible(f,e){return P.filter(p=>!state.drafted.has(p.n)&&p.teams[f]&&p.teams[f].includes(e));}
 function hasPlayers(f,e){return eligible(f,e).length>0;}
 
@@ -1840,6 +1872,72 @@ let gameSpeed='normal';
 const SPEED={chill:1,normal:.6,fast:.32};
 const SPEED_HINT={chill:"Slow, detailed ball-by-ball call.",normal:"Balanced commentary pace.",fast:"Quick — skim through the games."};
 function setSpeed(s){gameSpeed=s;document.querySelectorAll('#speedRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.sp===s));$('speedHint').textContent=SPEED_HINT[s];}
+
+/* ---- daily challenge (deterministic same-draft-for-everyone) + local leaderboard ---- */
+const DKEY='14-0-daily-v1';
+const OUT_RANK={champ:5,runner:4,lostQ2:3,lostElim:2,missed:1};
+function dateKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function todayKey(){return dateKey(new Date());}
+function loadDaily(){try{return JSON.parse(localStorage.getItem(DKEY))||{}}catch(e){return{}}}
+function storeDaily(d){try{localStorage.setItem(DKEY,JSON.stringify(d))}catch(e){}}
+function genDailyPlan(){
+  const rng=mulberry32(hashStr('14-0-daily::'+todayKey()));
+  let roles=['BAT','BAT','BAT','BAT','BAT','BOWL','BOWL','BOWL','BOWL','AR','AR'];
+  for(let i=roles.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[roles[i],roles[j]]=[roles[j],roles[i]];}
+  const fr=Object.keys(FR), plan=[];
+  for(const rg of roles){
+    let chosen=null,tries=0;
+    while(tries++<400){
+      const f=fr[Math.floor(rng()*fr.length)], e=1+Math.floor(rng()*4);
+      if(P.filter(p=>p.teams[f]&&p.teams[f].includes(e)&&roleGroup(p)===rg).length>=3){chosen={f,e,rg};break;}
+    }
+    if(!chosen){for(const f of fr){for(let e=1;e<=4;e++){if(P.some(p=>p.teams[f]&&p.teams[f].includes(e)&&roleGroup(p)===rg)){chosen={f,e,rg};break;}}if(chosen)break;}}
+    plan.push(chosen);
+  }
+  return plan;
+}
+function startDaily(){
+  if(fmt!=='ipl') setFormat('ipl');
+  const plan=genDailyPlan();
+  resetGame();
+  state.daily=true; state.plan=plan;
+  $('dailyTag').style.display=''; $('skipsRow').style.display='none';
+  renderDots();
+}
+function betterDaily(a,b){
+  if(!b)return true; if(!a)return false;
+  if(a.wins!==b.wins)return a.wins>b.wins;
+  const ra=OUT_RANK[a.outcome]||0, rb=OUT_RANK[b.outcome]||0;
+  if(ra!==rb)return ra>rb;
+  return (a.rating||0)>(b.rating||0);
+}
+function saveDailyResult(s){
+  const data=loadDaily(), k=todayKey(), prev=data[k];
+  const e={wins:s.wins,losses:s.losses,outcome:s.outcome,rating:s.rating,team:myTeam};
+  const keep=betterDaily(e,prev)?e:prev;
+  keep.attempts=((prev&&prev.attempts)||0)+1;
+  data[k]=keep; storeDaily(data); return data;
+}
+function dailyStreak(data){
+  const has=k=>!!data[k]; let d=new Date();
+  if(!has(dateKey(d)))d.setDate(d.getDate()-1);
+  let n=0; while(has(dateKey(d))){n++;d.setDate(d.getDate()-1);} return n;
+}
+function bestEver(data){let best=null;for(const k in data){if(betterDaily(data[k],best))best=data[k];}return best;}
+function renderDaily(){
+  if(!$('dailyCard'))return;
+  const data=loadDaily(), today=data[todayKey()], streak=dailyStreak(data), best=bestEver(data);
+  const st=$('dcStreak');
+  st.className='dc-streak'+(streak>0?'':' none');
+  st.textContent=streak>0?`🔥 ${streak}-day streak`:'No streak yet';
+  $('dcStats').innerHTML=
+    `<div class="dcs"><div class="v ${today?'gold':'dim'}">${today?today.wins+'–'+today.losses:'—'}</div><div class="k">Today</div></div>`+
+    `<div class="dcs"><div class="v">${best?best.wins+'–'+best.losses:'—'}</div><div class="k">Best ever</div></div>`+
+    `<div class="dcs"><div class="v">${streak}</div><div class="k">Streak</div></div>`;
+  const btn=$('dcBtn');
+  if(today){btn.classList.add('done');btn.textContent=`Played today · ${today.wins}–${today.losses} · Retry →`;}
+  else{btn.classList.remove('done');btn.textContent='Play today’s challenge →';}
+}
 function ovr(p){const base=Math.max(p.bat,p.bowl);return p.role==="AR"?Math.min(99,base+Math.round(Math.min(p.bat,p.bowl)/9)):base;}
 function startGame(){resetGame();}
 function resetGame(){
@@ -1852,6 +1950,7 @@ function resetGame(){
   $('spinBtn').disabled=false;$('spinBtn').textContent="Spin";
   $('skT').disabled=true;$('skE').disabled=true;$('choices').innerHTML="";
   $('pickbar').style.display="none";resetPickFilter();
+  $('dailyTag').style.display="none";$('skipsRow').style.display="";
   renderDots();renderSheet();show('s-draft');
 }
 
@@ -1904,17 +2003,24 @@ function validBuckets(){
   return needB.length?needB:anyB;
 }
 function land(){
-  const cands=validBuckets();
-  const pick=cands[Math.floor(Math.random()*cands.length)];
-  state.current=pick;const{f,e}=pick;
+  let f,e;
+  if(state.daily&&state.plan){
+    const slot=state.plan[state.xi.length];
+    f=slot.f;e=slot.e;state.current={f,e};state.forceRole=slot.rg;
+  }else{
+    const cands=validBuckets();
+    const pick=cands[Math.floor(Math.random()*cands.length)];
+    state.current=pick;f=pick.f;e=pick.e;state.forceRole=null;
+  }
   const reel=$('reel');reel.classList.remove('spin');reel.style.setProperty('--fr',FR[f].c);
   $('rTeam').textContent=FR[f].name;$('rEra').textContent=ERAS[e];
   $('spinBtn').disabled=true;$('spinBtn').textContent="Pick a player below ↓";
-  $('skT').disabled=state.skips.team<=0;$('skE').disabled=state.skips.era<=0;
+  if(!state.daily){$('skT').disabled=state.skips.team<=0;$('skE').disabled=state.skips.era<=0;}
   resetPickFilter();
   renderChoices();
 }
 function reSpin(kind){
+  if(state.daily)return; // no skips in the daily challenge
   if(!state.current||state.skips[kind]<=0)return;
   const cur=state.current, all=validBuckets();
   // honour the skipped dimension first…
@@ -1995,12 +2101,13 @@ function renderChoices(){
   let list=eligible(f,e).sort((a,b)=>Math.max(b.bat,b.bowl)-Math.max(a.bat,a.bowl));
   const total=list.length;
   // only players whose role group is still needed can be picked (5 bat · 4 bowl · 2 all-rnd)
-  list=list.filter(p=>need[roleGroup(p)]);
+  // in the daily challenge, each slot is locked to a single required role for fairness
+  list=list.filter(p=> state.forceRole ? roleGroup(p)===state.forceRole : need[roleGroup(p)]);
   const pickable=list.length;
   if(pickRole!=='ALL') list=list.filter(p=>p.role===pickRole);
   const q=pickSearch.trim().toLowerCase();
   if(q) list=list.filter(p=>p.n.toLowerCase().includes(q));
-  const needTxt=['BAT','BOWL','AR'].filter(g=>need[g]).map(g=>`${COMP[g]-c[g]} ${COMP_LABEL[g]}`).join(' · ');
+  const needTxt = state.forceRole ? `a ${COMP_LABEL[state.forceRole]}` : ['BAT','BOWL','AR'].filter(g=>need[g]).map(g=>`${COMP[g]-c[g]} ${COMP_LABEL[g]}`).join(' · ');
   let h=`<div class="ph">${FR[f].name} · ${ERAS[e]} — need ${needTxt}<span class="phc">${list.length}/${total}</span></div>`;
   if(!total) h+=`<div class="empty">No players left here. Use a skip above.</div>`;
   else if(!pickable) h+=`<div class="empty">Everyone here fills a role you've already completed — use a skip above.</div>`;
@@ -2204,6 +2311,7 @@ function simulate(xi){
 
 function finish(){
   const s=simulate(state.xi);lastSim=s;
+  if(state.daily){s.daily=true;saveDailyResult(s);renderDaily();}
   skipping=false;ending=false;
   const L=FMT[fmt].L;
 
@@ -2683,7 +2791,7 @@ function celebrate(){
 }
 
 /* init */
-state=fresh();setFormat('ipl');setMode('stats');setSpeed('normal');renderDots&&renderDots();
+state=fresh();setFormat('ipl');setMode('stats');setSpeed('normal');renderDaily();renderDots&&renderDots();
 </script>
 </body>
 </html>
