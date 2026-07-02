@@ -261,15 +261,6 @@
   .m-line.win{color:var(--turf)} .m-line.lose{color:var(--loss)} .m-line.gold{color:var(--gold)}
   .m-star{margin-top:7px;font-family:'Spline Sans Mono',monospace;font-size:11px;color:var(--mute)}
   .m-star b{color:#B7C4E4;font-weight:600}
-  /* live commentary ticker */
-  .m-comm{margin-top:9px;padding:9px 11px;border-radius:9px;background:rgba(255,255,255,.03);
-    border-left:2px solid var(--spark);font-size:12px;line-height:1.4;color:#D6E0F5;font-weight:500;
-    min-height:0;opacity:0;transform:translateY(3px);transition:opacity .28s ease,transform .28s ease;
-    max-height:0;padding-top:0;padding-bottom:0;margin-top:0;overflow:hidden}
-  .m-comm.on{opacity:1;transform:none;max-height:90px;padding-top:9px;padding-bottom:9px;margin-top:9px}
-  .m-comm.big{border-left-color:var(--gold);color:#FFE9AE;font-weight:700}
-  .m-comm b{color:#fff;font-weight:700}
-  .match.compact .m-comm{font-size:11px}
 
   /* live reveal */
   #tableWrap,#seasonWrap,#poWrap{position:relative;background:var(--deep);
@@ -287,6 +278,27 @@
   .skip-bar:hover{color:var(--ink);border-color:var(--line2);background:rgba(255,255,255,.05)}
   .skip-2{display:flex;gap:10px;margin:18px 0 16px}
   .skip-bar.inrow{margin:0;flex:1}
+  /* live commentary feed under the board */
+  .comm-feed{margin-top:14px;background:var(--deep);border:1px solid var(--line);border-radius:16px;
+    padding:14px 16px 12px;overflow:hidden}
+  .cf-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .cf-live{display:inline-flex;align-items:center;gap:6px;font-family:'Spline Sans Mono',monospace;font-size:10px;
+    font-weight:700;letter-spacing:.08em;color:var(--loss);background:rgba(255,92,122,.12);
+    border:1px solid rgba(255,92,122,.4);border-radius:20px;padding:4px 9px;white-space:nowrap}
+  .cf-live .dot{width:6px;height:6px;border-radius:50%;background:var(--loss);animation:pulse 1s infinite}
+  .cf-live.done{color:var(--turf);background:rgba(45,221,134,.12);border-color:rgba(45,221,134,.4)}
+  .cf-live.done .dot{background:var(--turf);animation:none}
+  .cf-title{font-weight:800;font-size:13px;letter-spacing:.01em;color:var(--ink);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .cf-body{display:flex;flex-direction:column;gap:0}
+  .cf-line{font-size:12.5px;line-height:1.45;color:#B9C5E2;padding:5px 0;border-top:1px solid rgba(255,255,255,.045);
+    opacity:0;transform:translateY(4px);animation:cfIn .34s ease forwards}
+  .cf-line:first-child{border-top:none}
+  .cf-line b{color:#fff;font-weight:700}
+  .cf-line.new{color:#E7EEFF}
+  .cf-line.win{color:var(--turf)}.cf-line.lose{color:var(--loss)}.cf-line.gold{color:var(--gold);font-weight:700}
+  @keyframes cfIn{to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.cf-line{animation:none;opacity:1;transform:none}}
   .lg-rec{font-family:'Spline Sans Mono',monospace;font-weight:700;font-size:12.5px;color:var(--ink);
     border:1px solid var(--line);border-radius:20px;padding:5px 13px;background:rgba(255,255,255,.02)}
   .match.compact{margin-bottom:8px}
@@ -617,6 +629,11 @@
       <div class="score" id="score"><span class="w">0</span><span class="x">–</span><span class="l">0</span></div>
       <div class="pos" id="pos"></div>
       <div class="po-line" id="poLine"></div>
+    </div>
+
+    <div id="commFeed" class="comm-feed" style="display:none">
+      <div class="cf-head"><span class="cf-live" id="cfLive"><span class="dot"></span>LIVE</span><span class="cf-title" id="cfTitle"></span></div>
+      <div class="cf-body" id="cfBody"></div>
     </div>
 
     <div id="skipRow" class="skip-2">
@@ -2222,7 +2239,6 @@ function matchHTML(l,shell,compact){
   const head=shell?`<span class="badge"></span>`:`<span class="badge"><span class="res ${bc}">${bt}</span></span>`;
   return`<div class="match ${l.gold?'gold':''} ${compact?'compact':''}"><div class="m-head"><div class="mt"><div class="r1">${l.rd}</div><div class="r2">${l.sub}</div></div>${head}</div>
     <div class="m-body">${rowHTML(c,l,c.rows[0],true,shell)}${rowHTML(c,l,c.rows[1],false,shell)}
-    <div class="m-comm"></div>
     <div class="m-line ${c.line.cls} ${shell?'pending':''}">${c.line.t}</div>
     <div class="m-star ${shell?'pending':''}">${c.star}</div></div></div>`;
 }
@@ -2258,13 +2274,14 @@ async function runLive(s){
   $('poLine').className="po-line";$('poLine').innerHTML="";
   setBoard(0,0);$('lgRec').textContent="0–0";$('pos').textContent="";
   renderTable(tableAt(s.table,0,0),0);
+  showFeed(true);clearFeed();
 
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){
     renderLeague(s,false);setBoard(s.wins,s.losses);$('lgRec').textContent=`${s.wins}–${s.losses}`;setPos(s);
     renderTable(tableAt(s.table,N,s.wins),N);
     $('poWrap').style.display="";
     if(s.path.length){renderPlayoffs(s,false);renderPoGames(s);} else $('poList').innerHTML=missTxt;
-    $('skipRow').style.display="none";revealEnd(s);return;
+    showFeed(false);$('skipRow').style.display="none";revealEnd(s);return;
   }
 
   // ---- regular season, game by game (table re-sorts after each result) ----
@@ -2301,7 +2318,31 @@ async function runLive(s){
   $('skipRow').style.display="none";
   revealEnd(s);
 }
-/* ---- ball-by-ball style commentary, generated from the scorecard ---- */
+/* ---- live commentary feed (under the season-record board) ---- */
+function showFeed(on){$('commFeed').style.display=on?"":"none";}
+function clearFeed(){$('cfBody').innerHTML="";}
+function feedHead(l){
+  $('cfLive').className="cf-live";$('cfLive').innerHTML='<span class="dot"></span>LIVE';
+  $('cfTitle').textContent=`${l.rd} · ${FR[myTeam].name} v ${l.card.opp}`;
+}
+function pushFeed(text,cls){
+  if(!text)return;
+  const body=$('cfBody');if(!body)return;
+  body.querySelectorAll('.cf-line.new').forEach(e=>e.classList.remove('new'));
+  const d=document.createElement('div');
+  d.className="cf-line new "+(cls||"");d.innerHTML=text;
+  body.appendChild(d);
+  while(body.children.length>6) body.removeChild(body.firstChild);
+}
+function feedFinish(s){
+  if(!$('commFeed')||$('commFeed').style.display==="none")return;
+  $('cfLive').className="cf-live done";$('cfLive').innerHTML='<span class="dot"></span>FULL TIME';
+  const out={champ:fmt==="test"?"🏆 <b>World Test Champions!</b>":"🏆 <b>Champions — the perfect run is complete!</b>",
+    runner:"🥈 <b>Runners-up</b> — agonisingly close.",lostQ2:"Knocked out in the playoffs.",
+    lostElim:"Knocked out in the Eliminator.",missed:"Missed the playoffs this season."}[s.outcome];
+  if(out)pushFeed(out, s.outcome==="champ"?"gold":(s.seed?"":"lose"));
+}
+/* base commentary lines from a scorecard */
 function commLines(l){
   const c=l.card, ME=FR[myTeam].name, opp=c.opp, T=c.test, h=c.hero||{};
   const first=c.rows[0], second=c.rows[1];
@@ -2318,55 +2359,94 @@ function commLines(l){
   let result;
   if(l.win) result=l.gold?`🏆 <b>${ME} ARE CHAMPIONS!</b> ${c.line.t}.`:`✅ <b>${c.line.t}!</b>`;
   else result=l.gold?`💔 So close — ${c.line.t}.`:`❌ ${c.line.t}.`;
-  return {toss,inn1,chase,batHero,bowlHero,result,gold:l.gold&&l.win};
+  return {ME,opp,T,firstSide,secondSide,toss,inn1,chase,batHero,bowlHero,result,gold:l.gold&&l.win};
 }
-function setComm(el,text,big){
-  if(!el||!text)return;
-  el.classList.remove('on'); void el.offsetWidth; // retrigger fade on rapid updates
-  el.innerHTML=text; el.classList.toggle('big',!!big); el.classList.add('on');
+// checkpoints so the score climbs powerplay -> middle -> finish
+function checkpoints(row,T){
+  const fb=T?0:parseOv(row.ov), R=row.runs, W=row.wk||0;
+  return {pp:{r:Math.round(R*0.30),w:W>=3?1:0,ball:Math.min(36,fb)},
+          mid:{r:Math.round(R*0.63),w:Math.floor(W*0.5),ball:Math.min(90,fb)},
+          end:{r:R,w:W,ball:fb}};
 }
-function clearComm(el){if(el){el.classList.remove('on','big');el.innerHTML='';}}
+// animate a score display from state a -> b
+function animRange(el,a,b,dur,test){
+  return new Promise(res=>{
+    const done=()=>{el.innerHTML=scHTML(b.r,b.w,b.ball,test);res();};
+    if(jump())return done();
+    const t0=performance.now();
+    (function f(now){
+      if(jump())return done();
+      const p=Math.min(1,(now-t0)/dur),e=1-Math.pow(1-p,3);
+      el.innerHTML=scHTML(Math.round(a.r+(b.r-a.r)*e),Math.min(b.w,Math.floor(a.w+(b.w-a.w)*e+1e-6)),Math.round(a.ball+(b.ball-a.ball)*e),test);
+      if(p<1)requestAnimationFrame(f);else done();
+    })(t0);
+  });
+}
 async function playMatchLive(el,l,opt){
   skipOne=false;
   const fast=opt&&opt.fast, together=opt&&opt.together;
   const innDur=fast?560:1250, pre=fast?90:300, mid=fast?140:350, post=fast?170:550, gap=fast?80:200;
-  const beat=fast?420:950; // pause to let a commentary line be read
+  const beat=fast?300:760; // pause to let a commentary line be read
   const c=l.card, badge=el.querySelector('.badge'), inns=el.querySelectorAll('.inn');
-  const comm=el.querySelector('.m-comm');
   const scs=[inns[0].querySelector('.sc'),inns[1].querySelector('.sc')], r0=c.rows[0], r1=c.rows[1], T=c.test;
   const CL=commLines(l);
+  const z={r:0,w:0,ball:0};
+  feedHead(l);clearFeed();
   badge.innerHTML=`<span class="res live"><span class="dot"></span>LIVE</span>`;
-  setComm(comm,CL.toss);
+  pushFeed(CL.toss);
   await wait(Math.max(pre,beat));
+
   if(together){
-    // league games: snappy — both innings tick together, toss + result commentary
+    // league: snappy — innings tick together, a few quick feed lines
     inns[0].classList.add('batting');inns[1].classList.add('batting');
     await Promise.all([
       animInnings(scs[0],r0.runs,r0.wk||0,T?0:parseOv(r0.ov),innDur,T),
       animInnings(scs[1],r1.runs,r1.wk||0,T?0:parseOv(r1.ov),innDur,T)
     ]);
     inns[0].classList.remove('batting');inns[1].classList.remove('batting');
-  }else{
-    // playoffs: full dramatic call — innings by innings with hero beats
-    inns[0].classList.add('batting');await animInnings(scs[0],r0.runs,r0.wk||0,T?0:parseOv(r0.ov),innDur,T);
+    pushFeed(CL.inn1);await wait(beat);
+  }else if(T){
+    // Test: innings totals, no overs
+    inns[0].classList.add('batting');await animRange(scs[0],z,{r:r0.runs,w:0,ball:0},innDur,true);
     inns[0].classList.remove('batting');
-    setComm(comm,CL.inn1);await wait(beat);
-    if(CL.chase){setComm(comm,CL.chase);await wait(mid);}
+    pushFeed(CL.inn1);await wait(beat);
+    if(CL.batHero){pushFeed(CL.batHero);await wait(beat);}
+    pushFeed(CL.chase);await wait(mid);
+    inns[1].classList.add('batting');await animRange(scs[1],z,{r:r1.runs,w:0,ball:0},innDur,true);
+    inns[1].classList.remove('batting');
+    if(CL.bowlHero){pushFeed(CL.bowlHero);await wait(beat);}
+  }else{
+    // playoffs T20: full ball-by-ball style call, score climbing through phases
+    const cp0=checkpoints(r0,T);
+    inns[0].classList.add('batting');
+    await animRange(scs[0],z,cp0.pp,innDur*0.42,T);
+    pushFeed(`⚡ <b>${CL.firstSide}</b> race to <b>${cp0.pp.r}/${cp0.pp.w}</b> in the powerplay.`);await wait(beat);
+    await animRange(scs[0],cp0.pp,cp0.mid,innDur*0.34,T);
+    pushFeed(`<b>${CL.firstSide}</b> settle in — <b>${cp0.mid.r}/${cp0.mid.w}</b> after 12 overs.`);await wait(beat);
+    await animRange(scs[0],cp0.mid,cp0.end,innDur*0.34,T);
+    inns[0].classList.remove('batting');
+    pushFeed(CL.inn1);await wait(beat);
+    if(CL.batHero){pushFeed(CL.batHero);await wait(beat);}
+    pushFeed(CL.chase);await wait(mid);
+    const cp1=checkpoints(r1,T);
     inns[1].classList.add('batting');
-    setComm(comm,(l.win?CL.batHero:CL.bowlHero)||CL.batHero||CL.bowlHero);
-    await animInnings(scs[1],r1.runs,r1.wk||0,T?0:parseOv(r1.ov),innDur,T);
+    await animRange(scs[1],z,cp1.pp,innDur*0.42,T);
+    pushFeed(`<b>${CL.secondSide}</b> reply — <b>${cp1.pp.r}/${cp1.pp.w}</b> after the powerplay.`);await wait(beat);
+    if(CL.bowlHero){pushFeed(CL.bowlHero);await wait(beat);}
+    await animRange(scs[1],cp1.pp,cp1.mid,innDur*0.34,T);
+    pushFeed(`🔊 Down to the wire — <b>${CL.secondSide}</b> at <b>${cp1.mid.r}/${cp1.mid.w}</b>.`);await wait(beat);
+    await animRange(scs[1],cp1.mid,cp1.end,innDur*0.34,T);
     inns[1].classList.remove('batting');
   }
+
   await wait(gap);
   inns.forEach((row,i)=>{const r=i===0?r0:r1;const w=(l.win&&r.me)||(!l.win&&!r.me);row.classList.add(w?'win':'lose');});
   const bc=l.gold&&l.win?"gold":(l.win?"win":"lose"),bt=l.gold?(l.win?"CHAMPIONS":"LOST"):(l.win?"WON":"LOST");
   badge.innerHTML=`<span class="res ${bc}">${bt}</span>`;
   el.querySelector('.m-line').classList.remove('pending');
   el.querySelector('.m-star').classList.remove('pending');
-  setComm(comm,CL.result,CL.gold);
+  pushFeed(CL.result, CL.gold?"gold":(l.win?"win":"lose"));
   await wait(post);
-  if(!fast)await wait(beat);
-  clearComm(comm); // finished card stays clean; result is in the result line
   skipOne=false;
 }
 function skipLiveRun(){skipping=true;}
@@ -2387,6 +2467,7 @@ function addPoOutcome(s){
 }
 function revealEnd(s){
   if(ending)return;ending=true;
+  feedFinish(s);
   addPoOutcome(s);
   if(s.outcome==="champ"){ $('board').classList.add('champ'); showTrophy(s); }
   else { $('post').classList.add('show'); }
