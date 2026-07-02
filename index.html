@@ -392,6 +392,18 @@
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   #confetti{position:fixed;inset:0;pointer-events:none;z-index:75;display:none}
 
+  /* ---------------- share card overlay ---------------- */
+  .share-ov{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
+    background:rgba(4,8,16,.82);backdrop-filter:blur(6px);padding:20px}
+  .share-ov.show{display:flex}
+  .share-box{position:relative;width:100%;max-width:420px;display:flex;flex-direction:column;gap:14px;align-items:center}
+  .share-x{position:absolute;top:-6px;right:-6px;width:38px;height:38px;border-radius:50%;border:1px solid var(--line2);
+    background:var(--deep);color:var(--ink);font-size:15px;cursor:pointer;z-index:2}
+  .share-card{width:100%;border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.6);line-height:0}
+  .share-card svg{width:100%;height:auto;display:block}
+  .share-btns{display:flex;flex-wrap:wrap;gap:10px;width:100%}
+  .share-btns .btn{flex:1;min-width:120px}
+
   /* ---------------- persistent home button ---------------- */
   .home-btn{position:fixed;top:18px;left:18px;z-index:40;width:40px;height:40px;border-radius:50%;
     display:none;align-items:center;justify-content:center;border:1px solid var(--line);
@@ -676,13 +688,24 @@
     </div>
 
     <div class="row" style="margin-top:18px">
-      <button class="btn btn-ghost" onclick="copyResult()">Copy result</button>
+      <button class="btn btn-ghost" onclick="openShare()">Share result</button>
       <button class="btn btn-go" onclick="resetGame()">Draft again</button>
     </div>
 
     <p class="foot">Independent fan-made game. Not affiliated with, endorsed by, or sponsored by the IPL, BCCI, any franchise or any player. IPL season stats are real (2008–2024 ball-by-ball data); ratings are a simplified model for fun.</p>
   </section>
 
+</div>
+<div class="share-ov" id="shareOv" onclick="if(event.target===this)closeShare()">
+  <div class="share-box">
+    <button class="share-x" onclick="closeShare()" aria-label="Close">✕</button>
+    <div class="share-card" id="shareCardImg"></div>
+    <div class="share-btns">
+      <button class="btn btn-go" onclick="downloadCard()">⬇ Download image</button>
+      <button class="btn btn-ghost" onclick="shareCard()">Share…</button>
+      <button class="btn btn-ghost" onclick="copyResult()">Copy text</button>
+    </div>
+  </div>
 </div>
 <div class="toast" id="toast">Copied to clipboard</div>
 
@@ -2436,8 +2459,8 @@ async function playMatchLive(el,l,opt){
   skipOne=false;skipInn=false;
   const fast=opt&&opt.fast, together=opt&&opt.together;
   // timings — much slower so every line can be read
-  const innDur=fast?1150:2600, pre=fast?250:900, mid=fast?450:1100, post=fast?400:1300, gap=fast?220:500;
-  const beat=fast?720:1900; // pause after each commentary line (playoffs slow & detailed)
+  const innDur=fast?1400:3100, pre=fast?320:1050, mid=fast?560:1350, post=fast?460:1550, gap=fast?260:620;
+  const beat=fast?920:2300; // pause after each commentary line (playoffs slow & detailed)
   const c=l.card, badge=el.querySelector('.badge'), inns=el.querySelectorAll('.inn');
   const scs=[inns[0].querySelector('.sc'),inns[1].querySelector('.sc')], r0=c.rows[0], r1=c.rows[1], T=c.test;
   const CL=commLines(l);
@@ -2534,13 +2557,97 @@ function gradeFor(s){
 }
 
 /* ---- share ---- */
-function copyResult(){
-  if(!lastSim)return;const s=lastSim;
+function shareText(s){
   const tail={champ:"and lifted the trophy 🏆",runner:"and reached the Final",lostQ2:"out in Qualifier 2",lostElim:"out in the Eliminator",missed:"and missed the playoffs"}[s.outcome];
-  const txt=`My ${FR[myTeam].name} XI went ${s.wins}–${s.losses} in the league ${tail} on 14–0, the perfect IPL season game.\nRating ${s.rating}/100 · best pick ${s.best.n}.\nThink you can do better?`;
-  (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(toast).catch(toast);
+  return `My ${FR[myTeam].name} XI went ${s.wins}–${s.losses} in the league ${tail} on 14–0, the perfect IPL season game.\nRating ${s.rating}/100 · best pick ${s.best.n}.\nThink you can do better?`;
 }
-function toast(){const t=$('toast');t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+function copyResult(){
+  if(!lastSim)return;
+  (navigator.clipboard?navigator.clipboard.writeText(shareText(lastSim)):Promise.reject()).then(toast).catch(toast);
+}
+function toast(m){const t=$('toast');if(m)t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+
+/* ---- shareable result card (rendered as SVG, exportable to PNG) ---- */
+function xmlEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function shareOutcome(s){
+  return {champ:{t:"CHAMPIONS",col:"#FFCB3D"},runner:{t:"RUNNERS-UP",col:"#C8D3EE"},
+          lostQ2:{t:"KNOCKED OUT",col:"#FF6B7E"},lostElim:{t:"KNOCKED OUT",col:"#FF6B7E"},
+          missed:{t:"MISSED PLAYOFFS",col:"#8892A6"}}[s.outcome]||{t:"SEASON DONE",col:"#8892A6"};
+}
+function buildShareSVG(s){
+  const prim=FR[myTeam].c, sec=(typeof BG2!=='undefined'&&BG2[myTeam])||"#12305E", name=FR[myTeam].name.toUpperCase();
+  const oc=shareOutcome(s), gr=gradeFor(s), fmtWord=fmt==='test'?'TEST':'IPL';
+  const num=fmt==='test'?'12–0':'14–0';
+  const names=(state.xi||[]).map(p=>p.n);
+  const colTxt=(arr,x)=>arr.map((n,i)=>`<text x="${x}" y="${958+i*44}" font-size="27" font-weight="600" fill="#DCE6FA">${xmlEsc(n)}</text>`).join('');
+  const col1=colTxt(names.slice(0,6),150), col2=colTxt(names.slice(6,11),580);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350" font-family="Arial,Helvetica,sans-serif">
+  <defs>
+    <linearGradient id="sbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${prim}" stop-opacity="0.34"/><stop offset="0.5" stop-color="#0a1120"/>
+      <stop offset="1" stop-color="${sec}" stop-opacity="0.36"/>
+    </linearGradient>
+    <radialGradient id="sglow" cx="0.5" cy="0.16" r="0.75">
+      <stop offset="0" stop-color="${prim}" stop-opacity="0.4"/><stop offset="1" stop-color="${prim}" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1080" height="1350" fill="#070d1b"/>
+  <rect width="1080" height="1350" fill="url(#sbg)"/>
+  <rect width="1080" height="1350" fill="url(#sglow)"/>
+  <rect x="22" y="22" width="1036" height="1306" rx="34" fill="none" stroke="${prim}" stroke-opacity="0.45" stroke-width="2"/>
+  <text x="540" y="120" text-anchor="middle" font-size="52" font-weight="900" letter-spacing="6" fill="#FFCB3D">${num}</text>
+  <text x="540" y="162" text-anchor="middle" font-size="23" font-weight="700" letter-spacing="7" fill="#8FA0BE">CHASE THE PERFECT ${fmtWord} SEASON</text>
+  <text x="540" y="278" text-anchor="middle" font-size="66" font-weight="900" fill="#ffffff">${xmlEsc(name)}</text>
+  <text x="540" y="560" text-anchor="middle" font-size="290" font-weight="900"><tspan fill="#2DDD86">${s.wins}</tspan><tspan fill="#5A6580">–</tspan><tspan fill="#FF6B7E">${s.losses}</tspan></text>
+  <text x="540" y="612" text-anchor="middle" font-size="26" font-weight="700" letter-spacing="7" fill="#8FA0BE">LEAGUE RECORD</text>
+  <rect x="300" y="656" width="480" height="86" rx="43" fill="${oc.col}" fill-opacity="0.15" stroke="${oc.col}" stroke-opacity="0.6" stroke-width="2"/>
+  <text x="540" y="713" text-anchor="middle" font-size="42" font-weight="900" letter-spacing="3" fill="${oc.col}">${oc.t}</text>
+  <text x="320" y="838" text-anchor="middle" font-size="92" font-weight="900" fill="#FFCB3D">${gr.l}</text>
+  <text x="320" y="878" text-anchor="middle" font-size="22" font-weight="700" letter-spacing="2" fill="#8FA0BE">GRADE</text>
+  <text x="760" y="838" text-anchor="middle" font-size="92" font-weight="900" fill="#38E3FF">${s.rating}</text>
+  <text x="760" y="878" text-anchor="middle" font-size="22" font-weight="700" letter-spacing="2" fill="#8FA0BE">RATING / 100</text>
+  <line x1="140" y1="912" x2="940" y2="912" stroke="#ffffff" stroke-opacity="0.1" stroke-width="2"/>
+  ${col1}${col2}
+  <text x="540" y="1244" text-anchor="middle" font-size="26" font-weight="700" fill="#FFCB3D">★ Best pick: <tspan fill="#DCE6FA">${xmlEsc(s.best?s.best.n:'—')}</tspan></text>
+  <text x="540" y="1300" text-anchor="middle" font-size="26" font-weight="800" letter-spacing="2" fill="#8FA0BE">14-0.fun · can you beat it?</text>
+</svg>`;
+}
+let shareSVG="";
+function openShare(){
+  if(!lastSim){toast("Finish a season first");return;}
+  shareSVG=buildShareSVG(lastSim);
+  $('shareCardImg').innerHTML=shareSVG;
+  $('shareOv').classList.add('show');
+}
+function closeShare(){$('shareOv').classList.remove('show');}
+function svgToPng(svg){
+  return new Promise((res,rej)=>{
+    const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'}), url=URL.createObjectURL(blob);
+    const img=new Image();
+    img.onload=()=>{const cv=document.createElement('canvas');cv.width=1080;cv.height=1350;
+      cv.getContext('2d').drawImage(img,0,0,1080,1350);URL.revokeObjectURL(url);
+      cv.toBlob(b=>b?res(b):rej(),'image/png');};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej();};
+    img.src=url;
+  });
+}
+async function downloadCard(){
+  try{const blob=await svgToPng(shareSVG),url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;
+    a.download=`14-0-${FR[myTeam].name}-${lastSim.wins}-${lastSim.losses}.png`;
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast("Image downloaded");
+  }catch(e){toast("Couldn't make image");}
+}
+async function shareCard(){
+  const s=lastSim, text=shareText(s);
+  try{
+    const blob=await svgToPng(shareSVG), file=new File([blob],"14-0.png",{type:"image/png"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],text});}
+    else if(navigator.share){await navigator.share({text});}
+    else{copyResult();}
+  }catch(e){/* user cancelled or unsupported */}
+}
 
 /* ---- confetti (champions only) ---- */
 function celebrate(){
