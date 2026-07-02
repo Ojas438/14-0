@@ -584,6 +584,16 @@
     </div>
 
     <div class="teamsel">
+      <div class="ts-lab">Match speed</div>
+      <div class="seg" id="speedRow">
+        <button class="seg-b" data-sp="chill" onclick="setSpeed('chill')">Chill</button>
+        <button class="seg-b sel" data-sp="normal" onclick="setSpeed('normal')">Normal</button>
+        <button class="seg-b" data-sp="fast" onclick="setSpeed('fast')">Fast</button>
+      </div>
+      <p class="sub" id="speedHint">Balanced commentary pace.</p>
+    </div>
+
+    <div class="teamsel">
       <div class="ts-lab">Background</div>
       <div class="ts-row" id="bgRow"></div>
     </div>
@@ -1825,7 +1835,11 @@ function hasPlayers(f,e){return eligible(f,e).length>0;}
 
 /* ---- title ---- */
 const MODE_HINT={overall:"See a single overall rating (0–100) for each player.",stats:"See each player's best-season stat line as you draft.",blind:"No numbers at all — draft on memory and instinct."};
-function setMode(m){mode=m;document.querySelectorAll('.seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.m===m));$('modeHint').textContent=MODE_HINT[m];}
+function setMode(m){mode=m;document.querySelectorAll('#modeRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.m===m));$('modeHint').textContent=MODE_HINT[m];}
+let gameSpeed='normal';
+const SPEED={chill:1,normal:.6,fast:.32};
+const SPEED_HINT={chill:"Slow, detailed ball-by-ball call.",normal:"Balanced commentary pace.",fast:"Quick — skim through the games."};
+function setSpeed(s){gameSpeed=s;document.querySelectorAll('#speedRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.sp===s));$('speedHint').textContent=SPEED_HINT[s];}
 function ovr(p){const base=Math.max(p.bat,p.bowl);return p.role==="AR"?Math.min(99,base+Math.round(Math.min(p.bat,p.bowl)/9)):base;}
 function startGame(){resetGame();}
 function resetGame(){
@@ -2459,8 +2473,9 @@ async function playMatchLive(el,l,opt){
   skipOne=false;skipInn=false;
   const fast=opt&&opt.fast, together=opt&&opt.together;
   // timings — much slower so every line can be read
-  const innDur=fast?1400:3100, pre=fast?320:1050, mid=fast?560:1350, post=fast?460:1550, gap=fast?260:620;
-  const beat=fast?920:2300; // pause after each commentary line (playoffs slow & detailed)
+  const sm=SPEED[gameSpeed]||0.6; // user-selected speed multiplier (title screen)
+  const innDur=(fast?1400:3100)*sm, pre=(fast?320:1050)*sm, mid=(fast?560:1350)*sm, post=(fast?460:1550)*sm, gap=(fast?260:620)*sm;
+  const beat=(fast?920:2300)*sm; // pause after each commentary line (scaled by chosen speed)
   const c=l.card, badge=el.querySelector('.badge'), inns=el.querySelectorAll('.inn');
   const scs=[inns[0].querySelector('.sc'),inns[1].querySelector('.sc')], r0=c.rows[0], r1=c.rows[1], T=c.test;
   const CL=commLines(l);
@@ -2668,7 +2683,7 @@ function celebrate(){
 }
 
 /* init */
-state=fresh();setFormat('ipl');setMode('stats');renderDots&&renderDots();
+state=fresh();setFormat('ipl');setMode('stats');setSpeed('normal');renderDots&&renderDots();
 </script>
 </body>
 </html>
