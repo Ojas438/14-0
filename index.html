@@ -276,8 +276,10 @@
     color:var(--mute);background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:13px;
     padding:12px;cursor:pointer;transition:.15s;margin:18px 0 16px}
   .skip-bar:hover{color:var(--ink);border-color:var(--line2);background:rgba(255,255,255,.05)}
-  .skip-2{display:flex;gap:10px;margin:18px 0 16px}
+  .skip-2{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 16px}
   .skip-bar.inrow{margin:0;flex:1}
+  .skip-bar.wide{flex-basis:100%;color:var(--spark);border-color:color-mix(in srgb,var(--spark) 35%,var(--line))}
+  .skip-bar.wide:hover{color:var(--spark);border-color:var(--spark);background:color-mix(in srgb,var(--spark) 10%,transparent)}
   /* live commentary feed under the board */
   .comm-feed{margin-top:14px;background:var(--deep);border:1px solid var(--line);border-radius:16px;
     padding:14px 16px 12px;overflow:hidden}
@@ -637,6 +639,7 @@
     </div>
 
     <div id="skipRow" class="skip-2">
+      <button id="skipInnBtn" class="skip-bar inrow wide" onclick="skipInnings()">Skip innings ⏭</button>
       <button id="skipGameBtn" class="skip-bar inrow" onclick="skipOneGame()">Skip this game →</button>
       <button id="skipBtn" class="skip-bar inrow" onclick="skipLiveRun()">Skip to result ⏭</button>
     </div>
@@ -2208,8 +2211,8 @@ function setPos(s){const into=fmt==="test"?"into the WTC Final":"into the playof
   $('pos').innerHTML=s.seed?`Finished <b>${ordinal(s.pos)}</b> — ${into}`:`Finished <b>${ordinal(s.pos)}</b> — ${FMT[fmt].L.missed}`;}
 
 /* ---------- live scorecard reveal ---------- */
-let skipping=false, ending=false, skipOne=false;
-const jump=()=>skipping||skipOne; // jump the *current* innings/wait to its end
+let skipping=false, ending=false, skipOne=false, skipInn=false;
+const jump=()=>skipping||skipOne||skipInn; // jump the *current* innings/wait to its end
 const fmtOv=b=>Math.floor(b/6)+"."+(b%6);
 const parseOv=o=>{const m=String(o).match(/(\d+)\.(\d)/);return m?(+m[1])*6+(+m[2]):120;};
 const scHTML=(r,w,b,test)=> test?`${r}`:`${r}/${w}<span class="ov">(${fmtOv(b)})</span>`;
@@ -2361,6 +2364,18 @@ function commLines(l){
   else result=l.gold?`💔 So close — ${c.line.t}.`:`❌ ${c.line.t}.`;
   return {ME,opp,T,firstSide,secondSide,toss,inn1,chase,batHero,bowlHero,result,gold:l.gold&&l.win};
 }
+// deterministic commentary flavour pools (vary per match, same team -> same call)
+const FLAV={
+  batPP:["Boundaries flowing in the powerplay.","A watchful start from the openers.","They cash in on the field restrictions.","An early wicket, but the reply is quick."],
+  batMid:["Spin into the attack, squeezing the run rate.","A partnership building through the middle overs.","They rotate the strike beautifully.","Wickets in hand — a big finish is loading."],
+  chase:["The required rate is starting to climb.","They're right on top of this chase.","Nerves jangling out in the middle.","One big over could settle it."],
+  death:["The slog overs are here.","Fielders back on the fence now.","Every run matters from here."]
+};
+function pick1(arr,seed){return arr[Math.abs(seed)%arr.length];}
+function innSkipLabel(meBatting,generic){
+  const b=$('skipInnBtn');if(!b)return;
+  b.textContent = generic ? "Skip innings ⏭" : (meBatting? "Skip our batting ⏭" : "Skip our bowling ⏭");
+}
 // checkpoints so the score climbs powerplay -> middle -> finish
 function checkpoints(row,T){
   const fb=T?0:parseOv(row.ov), R=row.runs, W=row.wk||0;
@@ -2383,21 +2398,25 @@ function animRange(el,a,b,dur,test){
   });
 }
 async function playMatchLive(el,l,opt){
-  skipOne=false;
+  skipOne=false;skipInn=false;
   const fast=opt&&opt.fast, together=opt&&opt.together;
-  const innDur=fast?560:1250, pre=fast?90:300, mid=fast?140:350, post=fast?170:550, gap=fast?80:200;
-  const beat=fast?300:760; // pause to let a commentary line be read
+  const innDur=fast?640:1650, pre=fast?110:480, mid=fast?180:520, post=fast?220:800, gap=fast?110:300;
+  const beat=fast?520:1250; // pause to let a commentary line be read (slower now)
   const c=l.card, badge=el.querySelector('.badge'), inns=el.querySelectorAll('.inn');
   const scs=[inns[0].querySelector('.sc'),inns[1].querySelector('.sc')], r0=c.rows[0], r1=c.rows[1], T=c.test;
   const CL=commLines(l);
   const z={r:0,w:0,ball:0};
+  const sd=hashStr((c.opp||"")+r0.runs+r1.runs); // stable seed for flavour variety
+  const showInnSkip=$('skipInnBtn');
+  if(showInnSkip)showInnSkip.style.visibility="visible";
   feedHead(l);clearFeed();
   badge.innerHTML=`<span class="res live"><span class="dot"></span>LIVE</span>`;
   pushFeed(CL.toss);
   await wait(Math.max(pre,beat));
 
   if(together){
-    // league: snappy — innings tick together, a few quick feed lines
+    // league: snappier — innings tick together, still a few feed lines
+    innSkipLabel(false,true);
     inns[0].classList.add('batting');inns[1].classList.add('batting');
     await Promise.all([
       animInnings(scs[0],r0.runs,r0.wk||0,T?0:parseOv(r0.ov),innDur,T),
@@ -2405,41 +2424,52 @@ async function playMatchLive(el,l,opt){
     ]);
     inns[0].classList.remove('batting');inns[1].classList.remove('batting');
     pushFeed(CL.inn1);await wait(beat);
+    if(CL.batHero){pushFeed(CL.batHero);await wait(beat);}
   }else if(T){
     // Test: innings totals, no overs
+    skipInn=false;innSkipLabel(r0.me);
     inns[0].classList.add('batting');await animRange(scs[0],z,{r:r0.runs,w:0,ball:0},innDur,true);
     inns[0].classList.remove('batting');
     pushFeed(CL.inn1);await wait(beat);
     if(CL.batHero){pushFeed(CL.batHero);await wait(beat);}
+    skipInn=false;innSkipLabel(r1.me);
     pushFeed(CL.chase);await wait(mid);
     inns[1].classList.add('batting');await animRange(scs[1],z,{r:r1.runs,w:0,ball:0},innDur,true);
     inns[1].classList.remove('batting');
     if(CL.bowlHero){pushFeed(CL.bowlHero);await wait(beat);}
   }else{
-    // playoffs T20: full ball-by-ball style call, score climbing through phases
+    // playoffs T20: slow, detailed ball-by-ball call across each innings
     const cp0=checkpoints(r0,T);
+    skipInn=false;innSkipLabel(r0.me);
     inns[0].classList.add('batting');
-    await animRange(scs[0],z,cp0.pp,innDur*0.42,T);
+    pushFeed(`▶️ <b>${CL.firstSide}</b> get us underway.`);await wait(beat);
+    await animRange(scs[0],z,cp0.pp,innDur*0.40,T);
     pushFeed(`⚡ <b>${CL.firstSide}</b> race to <b>${cp0.pp.r}/${cp0.pp.w}</b> in the powerplay.`);await wait(beat);
-    await animRange(scs[0],cp0.pp,cp0.mid,innDur*0.34,T);
-    pushFeed(`<b>${CL.firstSide}</b> settle in — <b>${cp0.mid.r}/${cp0.mid.w}</b> after 12 overs.`);await wait(beat);
-    await animRange(scs[0],cp0.mid,cp0.end,innDur*0.34,T);
+    pushFeed(pick1(FLAV.batPP,sd));await wait(beat);
+    await animRange(scs[0],cp0.pp,cp0.mid,innDur*0.33,T);
+    pushFeed(`<b>${CL.firstSide}</b> build — <b>${cp0.mid.r}/${cp0.mid.w}</b> after 12 overs.`);await wait(beat);
+    pushFeed(pick1(FLAV.batMid,sd>>2));await wait(beat);
+    await animRange(scs[0],cp0.mid,cp0.end,innDur*0.33,T);
     inns[0].classList.remove('batting');
-    pushFeed(CL.inn1);await wait(beat);
+    pushFeed(`💥 <b>${CL.firstSide}</b> ${r0.wk>=10?'bowled out for':'finish on'} <b>${r0.runs}/${r0.wk}</b>.`);await wait(beat);
     if(CL.batHero){pushFeed(CL.batHero);await wait(beat);}
     pushFeed(CL.chase);await wait(mid);
     const cp1=checkpoints(r1,T);
+    skipInn=false;innSkipLabel(r1.me);
     inns[1].classList.add('batting');
-    await animRange(scs[1],z,cp1.pp,innDur*0.42,T);
+    await animRange(scs[1],z,cp1.pp,innDur*0.40,T);
     pushFeed(`<b>${CL.secondSide}</b> reply — <b>${cp1.pp.r}/${cp1.pp.w}</b> after the powerplay.`);await wait(beat);
     if(CL.bowlHero){pushFeed(CL.bowlHero);await wait(beat);}
-    await animRange(scs[1],cp1.pp,cp1.mid,innDur*0.34,T);
-    pushFeed(`🔊 Down to the wire — <b>${CL.secondSide}</b> at <b>${cp1.mid.r}/${cp1.mid.w}</b>.`);await wait(beat);
-    await animRange(scs[1],cp1.mid,cp1.end,innDur*0.34,T);
+    await animRange(scs[1],cp1.pp,cp1.mid,innDur*0.33,T);
+    pushFeed(`🔊 <b>${CL.secondSide}</b> at <b>${cp1.mid.r}/${cp1.mid.w}</b> — game in the balance.`);await wait(beat);
+    pushFeed(pick1(FLAV.chase,sd>>4));await wait(beat);
+    await animRange(scs[1],cp1.mid,cp1.end,innDur*0.33,T);
+    pushFeed(`🏁 Into the final over...`);await wait(beat);
     inns[1].classList.remove('batting');
   }
 
   await wait(gap);
+  if(showInnSkip)showInnSkip.style.visibility="hidden"; // no innings left to skip
   inns.forEach((row,i)=>{const r=i===0?r0:r1;const w=(l.win&&r.me)||(!l.win&&!r.me);row.classList.add(w?'win':'lose');});
   const bc=l.gold&&l.win?"gold":(l.win?"win":"lose"),bt=l.gold?(l.win?"CHAMPIONS":"LOST"):(l.win?"WON":"LOST");
   badge.innerHTML=`<span class="res ${bc}">${bt}</span>`;
@@ -2447,10 +2477,11 @@ async function playMatchLive(el,l,opt){
   el.querySelector('.m-star').classList.remove('pending');
   pushFeed(CL.result, CL.gold?"gold":(l.win?"win":"lose"));
   await wait(post);
-  skipOne=false;
+  skipOne=false;skipInn=false;
 }
 function skipLiveRun(){skipping=true;}
 function skipOneGame(){skipOne=true;} // jump just the current match to its result
+function skipInnings(){skipInn=true;} // jump just the current innings (your batting or bowling)
 function poGameRow(leg){
   const won=leg.win, gold=leg.card.gold;
   return `<div class="pg ${won?'win':'loss'}${gold?' gold':''}"><span class="pg-l"><span class="rd">${leg.rd}</span><span class="vs">v ${leg.card.opp}</span></span><span class="rr">${won?'WON':'LOST'}</span></div>`;
