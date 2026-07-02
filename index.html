@@ -261,6 +261,15 @@
   .m-line.win{color:var(--turf)} .m-line.lose{color:var(--loss)} .m-line.gold{color:var(--gold)}
   .m-star{margin-top:7px;font-family:'Spline Sans Mono',monospace;font-size:11px;color:var(--mute)}
   .m-star b{color:#B7C4E4;font-weight:600}
+  /* live commentary ticker */
+  .m-comm{margin-top:9px;padding:9px 11px;border-radius:9px;background:rgba(255,255,255,.03);
+    border-left:2px solid var(--spark);font-size:12px;line-height:1.4;color:#D6E0F5;font-weight:500;
+    min-height:0;opacity:0;transform:translateY(3px);transition:opacity .28s ease,transform .28s ease;
+    max-height:0;padding-top:0;padding-bottom:0;margin-top:0;overflow:hidden}
+  .m-comm.on{opacity:1;transform:none;max-height:90px;padding-top:9px;padding-bottom:9px;margin-top:9px}
+  .m-comm.big{border-left-color:var(--gold);color:#FFE9AE;font-weight:700}
+  .m-comm b{color:#fff;font-weight:700}
+  .match.compact .m-comm{font-size:11px}
 
   /* live reveal */
   #tableWrap,#seasonWrap,#poWrap{position:relative;background:var(--deep);
@@ -276,6 +285,8 @@
     color:var(--mute);background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:13px;
     padding:12px;cursor:pointer;transition:.15s;margin:18px 0 16px}
   .skip-bar:hover{color:var(--ink);border-color:var(--line2);background:rgba(255,255,255,.05)}
+  .skip-2{display:flex;gap:10px;margin:18px 0 16px}
+  .skip-bar.inrow{margin:0;flex:1}
   .lg-rec{font-family:'Spline Sans Mono',monospace;font-weight:700;font-size:12.5px;color:var(--ink);
     border:1px solid var(--line);border-radius:20px;padding:5px 13px;background:rgba(255,255,255,.02)}
   .match.compact{margin-bottom:8px}
@@ -608,7 +619,10 @@
       <div class="po-line" id="poLine"></div>
     </div>
 
-    <button id="skipBtn" class="skip-bar" onclick="skipLiveRun()">Skip to result ⏭</button>
+    <div id="skipRow" class="skip-2">
+      <button id="skipGameBtn" class="skip-bar inrow" onclick="skipOneGame()">Skip this game →</button>
+      <button id="skipBtn" class="skip-bar inrow" onclick="skipLiveRun()">Skip to result ⏭</button>
+    </div>
 
     <div class="po" id="tableWrap">
       <div class="po-head"><h4 id="tableHd">Points table</h4><span class="lg-rec" id="tableMd">Matchday 0</span></div>
@@ -2053,8 +2067,9 @@ function simulate(xi){
     let bRuns=Math.min(me.runs-12, Math.round(topBat.bat*0.5)+ri(2,26)); bRuns=Math.max(18,bRuns);
     const bBalls=Math.max(12,Math.round(bRuns*0.68)+ri(0,7)), wWk=ri(1,4), wRuns=ri(16,41);
     const star=`★ <b>${last(topBat.n)}</b> ${bRuns}(${bBalls}) &nbsp;·&nbsp; <b>${last(topBowl.n)}</b> ${wWk}/${wRuns}`;
+    const hero={bn:last(topBat.n),br:bRuns,bb:bBalls,wn:last(topBowl.n),ww:wWk,wr:wRuns};
     return {win, gold:!!gold, card:{meBatFirst, opp:oppName, oppCol,
-      rows: meBatFirst ? [{me:1,...me},{me:0,...op}] : [{me:0,...op},{me:1,...me}], line, star, win}};
+      rows: meBatFirst ? [{me:1,...me},{me:0,...op}] : [{me:0,...op},{me:1,...me}], line, star, hero, win}};
   }
   // Test-match scorecard (innings totals + Test result phrasing)
   function buildTestCard(RNG,oppR,oppName,oppCol,gold,win){
@@ -2081,8 +2096,9 @@ function simulate(xi){
     }
     const bRuns=ri(35,Math.max(60,Math.round(Math.max(me.runs,200)*0.55))), wWk=ri(2,8), wRuns=ri(28,95);
     const star=`★ <b>${last(topBat.n)}</b> ${bRuns} &nbsp;·&nbsp; <b>${last(topBowl.n)}</b> ${wWk}/${wRuns}`;
+    const hero={bn:last(topBat.n),br:bRuns,bb:0,wn:last(topBowl.n),ww:wWk,wr:wRuns};
     return {win, gold:!!gold, card:{test:true, meBatFirst, opp:oppName, oppCol,
-      rows: meBatFirst ? [{me:1,runs:me.runs},{me:0,runs:op.runs}] : [{me:0,runs:op.runs},{me:1,runs:me.runs}], line, star, win}};
+      rows: meBatFirst ? [{me:1,runs:me.runs},{me:0,runs:op.runs}] : [{me:0,runs:op.runs},{me:1,runs:me.runs}], line, star, hero, win}};
   }
 
   // ---- regular season: N games, own deterministic stream, exactly `wins` wins ----
@@ -2175,17 +2191,18 @@ function setPos(s){const into=fmt==="test"?"into the WTC Final":"into the playof
   $('pos').innerHTML=s.seed?`Finished <b>${ordinal(s.pos)}</b> — ${into}`:`Finished <b>${ordinal(s.pos)}</b> — ${FMT[fmt].L.missed}`;}
 
 /* ---------- live scorecard reveal ---------- */
-let skipping=false, ending=false;
+let skipping=false, ending=false, skipOne=false;
+const jump=()=>skipping||skipOne; // jump the *current* innings/wait to its end
 const fmtOv=b=>Math.floor(b/6)+"."+(b%6);
 const parseOv=o=>{const m=String(o).match(/(\d+)\.(\d)/);return m?(+m[1])*6+(+m[2]):120;};
 const scHTML=(r,w,b,test)=> test?`${r}`:`${r}/${w}<span class="ov">(${fmtOv(b)})</span>`;
-function wait(ms){return new Promise(res=>{const t0=performance.now();(function c(){if(skipping||performance.now()-t0>=ms)return res();requestAnimationFrame(c);})();});}
+function wait(ms){return new Promise(res=>{const t0=performance.now();(function c(){if(jump()||performance.now()-t0>=ms)return res();requestAnimationFrame(c);})();});}
 function animInnings(el,runs,wk,balls,dur,test){
   return new Promise(res=>{
-    if(skipping){el.innerHTML=scHTML(runs,wk,balls,test);return res();}
+    if(jump()){el.innerHTML=scHTML(runs,wk,balls,test);return res();}
     const t0=performance.now();
     (function f(now){
-      if(skipping){el.innerHTML=scHTML(runs,wk,balls,test);return res();}
+      if(jump()){el.innerHTML=scHTML(runs,wk,balls,test);return res();}
       const p=Math.min(1,(now-t0)/dur),e=1-Math.pow(1-p,3);
       el.innerHTML=scHTML(Math.round(runs*e),Math.min(wk,Math.floor(wk*e+1e-6)),Math.round(balls*e),test);
       if(p<1)requestAnimationFrame(f);else{el.innerHTML=scHTML(runs,wk,balls,test);res();}
@@ -2205,6 +2222,7 @@ function matchHTML(l,shell,compact){
   const head=shell?`<span class="badge"></span>`:`<span class="badge"><span class="res ${bc}">${bt}</span></span>`;
   return`<div class="match ${l.gold?'gold':''} ${compact?'compact':''}"><div class="m-head"><div class="mt"><div class="r1">${l.rd}</div><div class="r2">${l.sub}</div></div>${head}</div>
     <div class="m-body">${rowHTML(c,l,c.rows[0],true,shell)}${rowHTML(c,l,c.rows[1],false,shell)}
+    <div class="m-comm"></div>
     <div class="m-line ${c.line.cls} ${shell?'pending':''}">${c.line.t}</div>
     <div class="m-star ${shell?'pending':''}">${c.star}</div></div></div>`;
 }
@@ -2235,7 +2253,7 @@ async function runLive(s){
   skipping=false;ending=false;
   const N=s.N, L=FMT[fmt].L;
   const missTxt=`<div class="po-miss">Finished <b>${ordinal(s.pos)}</b> — ${L.missed}.<br>${fmt==="test"?"No Final this cycle.":"No playoffs this season."}</div>`;
-  $('skipBtn').style.display="";$('seasonWrap').style.display="";$('tableWrap').style.display="";
+  $('skipRow').style.display="";$('seasonWrap').style.display="";$('tableWrap').style.display="";
   $('poWrap').style.display="none";$('poList').innerHTML="";
   $('poLine').className="po-line";$('poLine').innerHTML="";
   setBoard(0,0);$('lgRec').textContent="0–0";$('pos').textContent="";
@@ -2246,7 +2264,7 @@ async function runLive(s){
     renderTable(tableAt(s.table,N,s.wins),N);
     $('poWrap').style.display="";
     if(s.path.length){renderPlayoffs(s,false);renderPoGames(s);} else $('poList').innerHTML=missTxt;
-    $('skipBtn').style.display="none";revealEnd(s);return;
+    $('skipRow').style.display="none";revealEnd(s);return;
   }
 
   // ---- regular season, game by game (table re-sorts after each result) ----
@@ -2280,17 +2298,48 @@ async function runLive(s){
     }
   }else{ $('poList').innerHTML=missTxt; }
 
-  $('skipBtn').style.display="none";
+  $('skipRow').style.display="none";
   revealEnd(s);
 }
+/* ---- ball-by-ball style commentary, generated from the scorecard ---- */
+function commLines(l){
+  const c=l.card, ME=FR[myTeam].name, opp=c.opp, T=c.test, h=c.hero||{};
+  const first=c.rows[0], second=c.rows[1];
+  const firstSide=first.me?ME:opp, secondSide=second.me?ME:opp;
+  const s1=T?`${first.runs}`:`${first.runs}/${first.wk}`;
+  const target=first.runs+1;
+  const bigMark=T?420:190, lowMark=T?230:135;
+  const flavour=first.runs>=bigMark?'A commanding total.':(first.runs<=lowMark?'The bowlers kept them in check.':'A competitive total.');
+  const toss=`🪙 <b>${firstSide}</b> won the toss and chose to bat first.`;
+  const inn1=`🏏 <b>${firstSide}</b> ${T?'declared on':'posted'} <b>${s1}</b>. ${flavour}`;
+  const chase=T?`<b>${secondSide}</b> begin their reply.`:`🎯 <b>${secondSide}</b> need <b>${target}</b> to win.`;
+  const batHero=h.bn?`⭐ <b>${h.bn}</b> top-scores with <b>${h.br}${T?'':`(${h.bb})`}</b>.`:'';
+  const bowlHero=h.wn?`🔥 <b>${h.wn}</b> leads the attack — <b>${h.ww}/${h.wr}</b>.`:'';
+  let result;
+  if(l.win) result=l.gold?`🏆 <b>${ME} ARE CHAMPIONS!</b> ${c.line.t}.`:`✅ <b>${c.line.t}!</b>`;
+  else result=l.gold?`💔 So close — ${c.line.t}.`:`❌ ${c.line.t}.`;
+  return {toss,inn1,chase,batHero,bowlHero,result,gold:l.gold&&l.win};
+}
+function setComm(el,text,big){
+  if(!el||!text)return;
+  el.classList.remove('on'); void el.offsetWidth; // retrigger fade on rapid updates
+  el.innerHTML=text; el.classList.toggle('big',!!big); el.classList.add('on');
+}
+function clearComm(el){if(el){el.classList.remove('on','big');el.innerHTML='';}}
 async function playMatchLive(el,l,opt){
+  skipOne=false;
   const fast=opt&&opt.fast, together=opt&&opt.together;
   const innDur=fast?560:1250, pre=fast?90:300, mid=fast?140:350, post=fast?170:550, gap=fast?80:200;
+  const beat=fast?420:950; // pause to let a commentary line be read
   const c=l.card, badge=el.querySelector('.badge'), inns=el.querySelectorAll('.inn');
+  const comm=el.querySelector('.m-comm');
   const scs=[inns[0].querySelector('.sc'),inns[1].querySelector('.sc')], r0=c.rows[0], r1=c.rows[1], T=c.test;
+  const CL=commLines(l);
   badge.innerHTML=`<span class="res live"><span class="dot"></span>LIVE</span>`;
-  await wait(pre);
+  setComm(comm,CL.toss);
+  await wait(Math.max(pre,beat));
   if(together){
+    // league games: snappy — both innings tick together, toss + result commentary
     inns[0].classList.add('batting');inns[1].classList.add('batting');
     await Promise.all([
       animInnings(scs[0],r0.runs,r0.wk||0,T?0:parseOv(r0.ov),innDur,T),
@@ -2298,9 +2347,14 @@ async function playMatchLive(el,l,opt){
     ]);
     inns[0].classList.remove('batting');inns[1].classList.remove('batting');
   }else{
+    // playoffs: full dramatic call — innings by innings with hero beats
     inns[0].classList.add('batting');await animInnings(scs[0],r0.runs,r0.wk||0,T?0:parseOv(r0.ov),innDur,T);
-    inns[0].classList.remove('batting');await wait(mid);
-    inns[1].classList.add('batting');await animInnings(scs[1],r1.runs,r1.wk||0,T?0:parseOv(r1.ov),innDur,T);
+    inns[0].classList.remove('batting');
+    setComm(comm,CL.inn1);await wait(beat);
+    if(CL.chase){setComm(comm,CL.chase);await wait(mid);}
+    inns[1].classList.add('batting');
+    setComm(comm,(l.win?CL.batHero:CL.bowlHero)||CL.batHero||CL.bowlHero);
+    await animInnings(scs[1],r1.runs,r1.wk||0,T?0:parseOv(r1.ov),innDur,T);
     inns[1].classList.remove('batting');
   }
   await wait(gap);
@@ -2309,9 +2363,14 @@ async function playMatchLive(el,l,opt){
   badge.innerHTML=`<span class="res ${bc}">${bt}</span>`;
   el.querySelector('.m-line').classList.remove('pending');
   el.querySelector('.m-star').classList.remove('pending');
+  setComm(comm,CL.result,CL.gold);
   await wait(post);
+  if(!fast)await wait(beat);
+  clearComm(comm); // finished card stays clean; result is in the result line
+  skipOne=false;
 }
 function skipLiveRun(){skipping=true;}
+function skipOneGame(){skipOne=true;} // jump just the current match to its result
 function poGameRow(leg){
   const won=leg.win, gold=leg.card.gold;
   return `<div class="pg ${won?'win':'loss'}${gold?' gold':''}"><span class="pg-l"><span class="rd">${leg.rd}</span><span class="vs">v ${leg.card.opp}</span></span><span class="rr">${won?'WON':'LOST'}</span></div>`;
