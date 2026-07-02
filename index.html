@@ -629,6 +629,15 @@
     </div>
 
     <div class="teamsel">
+      <div class="ts-lab">Commentary voice</div>
+      <div class="seg" id="voiceRow">
+        <button class="seg-b sel" data-v="off" onclick="setVoice('off')">Off</button>
+        <button class="seg-b" data-v="on" onclick="setVoice('on')">🎙 English voice</button>
+      </div>
+      <p class="sub" id="voiceHint">Read the live commentary aloud in an English accent.</p>
+    </div>
+
+    <div class="teamsel">
       <div class="ts-lab">Background</div>
       <div class="ts-row" id="bgRow"></div>
     </div>
@@ -1855,7 +1864,7 @@ function goHome(){
   const mid = state && state.xi && state.xi.length>0 && state.xi.length<PICKS && document.getElementById('s-draft').classList.contains('on');
   if(mid && !confirm("Leave this draft? Your picks so far won't be saved.")) return;
   const ov=$('champ'); if(ov){ov.classList.remove('show');ov.style.opacity="";ov.style.transition="";}
-  skipping=true; ending=false;
+  skipping=true; ending=false; stopSpeech();
   state=fresh();
   $('pkNo').textContent="1";$('skTn').textContent="1";$('skEn').textContent="1";
   const reel=$('reel');reel.className="reel idle";reel.style.removeProperty('--fr');
@@ -1879,6 +1888,51 @@ let gameSpeed='normal';
 const SPEED={chill:1,normal:.6,fast:.32};
 const SPEED_HINT={chill:"Slow, detailed ball-by-ball call.",normal:"Balanced commentary pace.",fast:"Quick — skim through the games."};
 function setSpeed(s){gameSpeed=s;document.querySelectorAll('#speedRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.sp===s));$('speedHint').textContent=SPEED_HINT[s];}
+
+/* ---- spoken commentary (Web Speech API, English accent) ---- */
+let speakOn=false, enVoice=null, speechMuted=false;
+const canSpeak=typeof window!=='undefined' && 'speechSynthesis' in window;
+function pickVoice(){
+  if(!canSpeak)return;
+  const vs=speechSynthesis.getVoices();
+  const gb=vs.filter(v=>/en[-_]GB/i.test(v.lang)||/british|uk english/i.test(v.name));
+  enVoice = gb.find(v=>/natural|online|premium|enhanced/i.test(v.name)) || gb[0]  // best British if present
+        || vs.find(v=>/en[-_]AU/i.test(v.lang))            // Australian as a fallback accent
+        || vs.find(v=>/natural|online/i.test(v.name)&&/^en/i.test(v.lang))
+        || vs.find(v=>/^en/i.test(v.lang))                 // any English
+        || vs[0] || null;
+}
+if(canSpeak){ pickVoice(); speechSynthesis.onvoiceschanged=pickVoice; }
+function cleanForSpeech(html){
+  return String(html)
+    .replace(/<[^>]+>/g,'')                                       // strip tags
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu,'') // strip emoji/symbols
+    .replace(/(\d+)\s*\/\s*(\d+)/g,'$1 for $2')                   // 172/5 -> 172 for 5
+    .replace(/[–—]/g,' to ')                                      // 13–1 -> 13 to 1
+    .replace(/·/g,', ').replace(/\s+/g,' ').trim();
+}
+function speak(text){
+  if(!speakOn||!canSpeak||speechMuted)return;
+  const t=cleanForSpeech(text); if(!t)return;
+  // stay live: drop any still-playing line so we voice the current moment, not a backlog
+  try{ if(speechSynthesis.speaking||speechSynthesis.pending) speechSynthesis.cancel(); }catch(e){}
+  const u=new SpeechSynthesisUtterance(t);
+  if(enVoice)u.voice=enVoice;
+  u.lang='en-GB'; u.rate=1.03; u.pitch=1;
+  speechSynthesis.speak(u);
+}
+function stopSpeech(){ if(canSpeak)speechSynthesis.cancel(); }
+function setVoice(v){
+  document.querySelectorAll('#voiceRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.v===v));
+  speakOn = v==='on';
+  if(speakOn){
+    if(!canSpeak){$('voiceHint').textContent="Your browser doesn't support spoken commentary.";speakOn=false;
+      document.querySelectorAll('#voiceRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.v==='off'));return;}
+    pickVoice();
+    speak("Commentary on. Let's play.");   // primes the engine (needs a user gesture)
+    $('voiceHint').textContent = enVoice ? `Voice: ${enVoice.name}. Reads the live commentary aloud.` : "Reading commentary aloud (default voice).";
+  }else{ stopSpeech(); $('voiceHint').textContent="Read the live commentary aloud in an English accent."; }
+}
 
 /* ---- daily challenge (deterministic same-draft-for-everyone) + local leaderboard ---- */
 const DKEY='14-0-daily-v2'; // v2: results scoped per game mode { mode: { dateKey: result } }
@@ -2441,7 +2495,7 @@ function renderTable(rows,md){
 }
 
 async function runLive(s){
-  skipping=false;ending=false;
+  skipping=false;ending=false;speechMuted=false;stopSpeech();
   const N=s.N, L=FMT[fmt].L;
   const missTxt=`<div class="po-miss">Finished <b>${ordinal(s.pos)}</b> — ${L.missed}.<br>${fmt==="test"?"No Final this cycle.":"No playoffs this season."}</div>`;
   $('skipRow').style.display="";$('seasonWrap').style.display="";$('tableWrap').style.display="";
@@ -2497,6 +2551,7 @@ async function runLive(s){
 function showFeed(on){$('commFeed').style.display=on?"":"none";}
 function clearFeed(){$('cfBody').innerHTML="";}
 function feedHead(l){
+  speechMuted=false;
   $('cfLive').className="cf-live";$('cfLive').innerHTML='<span class="dot"></span>LIVE';
   $('cfTitle').textContent=`${l.rd} · ${FR[myTeam].name} v ${l.card.opp}`;
 }
@@ -2508,6 +2563,7 @@ function pushFeed(text,cls){
   d.className="cf-line new "+(cls||"");d.innerHTML=text;
   body.appendChild(d);
   while(body.children.length>6) body.removeChild(body.firstChild);
+  speak(text);
 }
 function feedFinish(s){
   if(!$('commFeed')||$('commFeed').style.display==="none")return;
@@ -2564,7 +2620,7 @@ function markPoint(row,m,T){const fb=T?0:parseOv(row.ov),R=row.runs,W=row.wk||0;
   return {r:m.rf>=1?R:Math.round(R*m.rf), w:Math.min(W,m.wf>=1?W:Math.round(W*m.wf)), ball:Math.min(fb,m.ov*6)};}
 // play one innings over-by-over, narrating into the feed
 async function liveInnings(scEl,rowEl,row,side,isChase,target,hero,sd,T,tm,marks){
-  skipInn=false; innSkipLabel(row.me);
+  skipInn=false; speechMuted=false; innSkipLabel(row.me);
   rowEl.classList.add('batting');
   pushFeed(isChase?`🎯 <b>${side}</b> begin the chase — <b>${target}</b> to win.`
                   :`▶️ <b>${side}</b> stride out to open the innings.`);
@@ -2656,9 +2712,9 @@ async function playMatchLive(el,l,opt){
   await wait(post);
   skipOne=false;skipInn=false;
 }
-function skipLiveRun(){skipping=true;}
-function skipOneGame(){skipOne=true;} // jump just the current match to its result
-function skipInnings(){skipInn=true;} // jump just the current innings (your batting or bowling)
+function skipLiveRun(){skipping=true;stopSpeech();speechMuted=true;}
+function skipOneGame(){skipOne=true;stopSpeech();speechMuted=true;} // jump just the current match to its result
+function skipInnings(){skipInn=true;stopSpeech();speechMuted=true;} // jump just the current innings (your batting or bowling)
 function poGameRow(leg){
   const won=leg.win, gold=leg.card.gold;
   return `<div class="pg ${won?'win':'loss'}${gold?' gold':''}"><span class="pg-l"><span class="rd">${leg.rd}</span><span class="vs">v ${leg.card.opp}</span></span><span class="rr">${won?'WON':'LOST'}</span></div>`;
@@ -2818,7 +2874,7 @@ function celebrate(){
 }
 
 /* init */
-state=fresh();setFormat('ipl');setMode('stats');setSpeed('normal');renderDaily();renderDots&&renderDots();
+state=fresh();setFormat('ipl');setMode('stats');setSpeed('normal');setVoice('off');renderDaily();renderDots&&renderDots();
 </script>
 </body>
 </html>
