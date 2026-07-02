@@ -411,6 +411,11 @@
   #dcBtn.done{background:none;color:var(--turf);border:1px solid color-mix(in srgb,var(--turf) 45%,var(--line))}
   .daily-tag{background:rgba(255,203,61,.1);border:1px solid rgba(255,203,61,.35);color:#FFCF6B;
     font-size:12px;font-weight:700;text-align:center;padding:9px 12px;border-radius:11px;margin-bottom:14px}
+  .mode-tag-wrap{text-align:center;margin-bottom:14px}
+  .mode-tag{display:inline-block;font-family:'Spline Sans Mono',monospace;font-size:11px;font-weight:700;
+    letter-spacing:.08em;color:var(--spark);background:color-mix(in srgb,var(--spark) 10%,transparent);
+    border:1px solid color-mix(in srgb,var(--spark) 35%,var(--line));border-radius:20px;padding:5px 12px}
+  .mode-tag:empty{display:none}
 
   /* ---------------- share card overlay ---------------- */
   .share-ov{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
@@ -642,6 +647,7 @@
     </div>
 
     <div class="daily-tag" id="dailyTag" style="display:none">🗓 Daily Challenge — same draft &amp; skips for everyone today</div>
+    <div class="mode-tag-wrap"><span class="mode-tag" id="modeTag"></span></div>
     <div class="dots" id="dots"></div>
     <div class="comp" id="comp"></div>
 
@@ -1867,7 +1873,8 @@ function hasPlayers(f,e){return eligible(f,e).length>0;}
 
 /* ---- title ---- */
 const MODE_HINT={overall:"See a single overall rating (0–100) for each player.",stats:"See each player's best-season stat line as you draft.",blind:"No numbers at all — draft on memory and instinct."};
-function setMode(m){mode=m;document.querySelectorAll('#modeRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.m===m));$('modeHint').textContent=MODE_HINT[m];if(typeof renderDaily==='function')renderDaily();}
+function setMode(m){mode=m;document.querySelectorAll('#modeRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.m===m));$('modeHint').textContent=MODE_HINT[m];renderModeTag();if(typeof renderDaily==='function')renderDaily();}
+function renderModeTag(){const el=$('modeTag');if(el)el.textContent=(MODE_NAME[mode]||'')+' mode';}
 let gameSpeed='normal';
 const SPEED={chill:1,normal:.6,fast:.32};
 const SPEED_HINT={chill:"Slow, detailed ball-by-ball call.",normal:"Balanced commentary pace.",fast:"Quick — skim through the games."};
