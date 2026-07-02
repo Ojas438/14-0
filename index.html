@@ -641,7 +641,7 @@
       <button class="btn btn-ghost mini" onclick="resetGame()">↺ Restart</button>
     </div>
 
-    <div class="daily-tag" id="dailyTag" style="display:none">🗓 Daily Challenge — fixed draft for everyone today, no skips</div>
+    <div class="daily-tag" id="dailyTag" style="display:none">🗓 Daily Challenge — same draft &amp; skips for everyone today</div>
     <div class="dots" id="dots"></div>
     <div class="comp" id="comp"></div>
 
@@ -1880,28 +1880,29 @@ function dateKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2
 function todayKey(){return dateKey(new Date());}
 function loadDaily(){try{return JSON.parse(localStorage.getItem(DKEY))||{}}catch(e){return{}}}
 function storeDaily(d){try{localStorage.setItem(DKEY,JSON.stringify(d))}catch(e){}}
+function bucketRoles(f,e){const c={BAT:0,BOWL:0,AR:0};for(const p of P){if(p.teams[f]&&p.teams[f].includes(e))c[roleGroup(p)]++;}return c;}
+// same draws for everyone today: 11 distinct role-rich buckets + deterministic skip alternates.
+// picks are free (any player, normal 5/4/2 rule); role-rich buckets guarantee no dead-ends.
 function genDailyPlan(){
   const rng=mulberry32(hashStr('14-0-daily::'+todayKey()));
-  let roles=['BAT','BAT','BAT','BAT','BAT','BOWL','BOWL','BOWL','BOWL','AR','AR'];
-  for(let i=roles.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[roles[i],roles[j]]=[roles[j],roles[i]];}
-  const fr=Object.keys(FR), plan=[];
-  for(const rg of roles){
-    let chosen=null,tries=0;
-    while(tries++<400){
-      const f=fr[Math.floor(rng()*fr.length)], e=1+Math.floor(rng()*4);
-      if(P.filter(p=>p.teams[f]&&p.teams[f].includes(e)&&roleGroup(p)===rg).length>=3){chosen={f,e,rg};break;}
-    }
-    if(!chosen){for(const f of fr){for(let e=1;e<=4;e++){if(P.some(p=>p.teams[f]&&p.teams[f].includes(e)&&roleGroup(p)===rg)){chosen={f,e,rg};break;}}if(chosen)break;}}
-    plan.push(chosen);
-  }
-  return plan;
+  const fr=Object.keys(FR), key=b=>b.f+'#'+b.e, rich=[];
+  for(const f of fr)for(let e=1;e<=4;e++){const c=bucketRoles(f,e);if(c.BAT>=2&&c.BOWL>=2&&c.AR>=2)rich.push({f,e});}
+  const pool=rich.slice();
+  for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+  const primaries=pool.slice(0,11), pk=new Set(primaries.map(key)), rand=()=>rich[Math.floor(rng()*rich.length)];
+  return primaries.map(main=>{
+    let altF,t=0; do{altF=rand();}while(t++<80&&(altF.f===main.f||pk.has(key(altF))));
+    let altE; t=0; do{altE=rand();}while(t++<80&&(altE.e===main.e||pk.has(key(altE))));
+    return {f:main.f,e:main.e,altF:{f:altF.f,e:altF.e},altE:{f:altE.f,e:altE.e}};
+  });
 }
 function startDaily(){
   if(fmt!=='ipl') setFormat('ipl');
   const plan=genDailyPlan();
   resetGame();
-  state.daily=true; state.plan=plan;
-  $('dailyTag').style.display=''; $('skipsRow').style.display='none';
+  state.daily=true; state.plan=plan; state.forceRole=null;
+  $('dailyTag').style.display=''; $('skipsRow').style.display='';
+  $('skTn').textContent=state.skips.team;$('skEn').textContent=state.skips.era;
   renderDots();
 }
 function betterDaily(a,b){
@@ -2006,7 +2007,7 @@ function land(){
   let f,e;
   if(state.daily&&state.plan){
     const slot=state.plan[state.xi.length];
-    f=slot.f;e=slot.e;state.current={f,e};state.forceRole=slot.rg;
+    f=slot.f;e=slot.e;state.current={f,e};state.forceRole=null;
   }else{
     const cands=validBuckets();
     const pick=cands[Math.floor(Math.random()*cands.length)];
@@ -2015,13 +2016,22 @@ function land(){
   const reel=$('reel');reel.classList.remove('spin');reel.style.setProperty('--fr',FR[f].c);
   $('rTeam').textContent=FR[f].name;$('rEra').textContent=ERAS[e];
   $('spinBtn').disabled=true;$('spinBtn').textContent="Pick a player below ↓";
-  if(!state.daily){$('skT').disabled=state.skips.team<=0;$('skE').disabled=state.skips.era<=0;}
+  $('skT').disabled=state.skips.team<=0;$('skE').disabled=state.skips.era<=0;
   resetPickFilter();
   renderChoices();
 }
 function reSpin(kind){
-  if(state.daily)return; // no skips in the daily challenge
   if(!state.current||state.skips[kind]<=0)return;
+  // daily: skip lands on today's deterministic alternate for this slot (same for everyone)
+  if(state.daily&&state.plan){
+    const slot=state.plan[state.xi.length], alt=kind==='team'?slot.altF:slot.altE;
+    state.current={f:alt.f,e:alt.e};state.forceRole=null;
+    state.skips[kind]--;$('skTn').textContent=state.skips.team;$('skEn').textContent=state.skips.era;
+    $('reel').style.setProperty('--fr',FR[alt.f].c);
+    $('rTeam').textContent=FR[alt.f].name;$('rEra').textContent=ERAS[alt.e];
+    $('skT').disabled=state.skips.team<=0;$('skE').disabled=state.skips.era<=0;
+    resetPickFilter();renderChoices();return;
+  }
   const cur=state.current, all=validBuckets();
   // honour the skipped dimension first…
   let cands = kind==='team'
