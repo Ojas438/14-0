@@ -2366,10 +2366,11 @@ function commLines(l){
 }
 // deterministic commentary flavour pools (vary per match, same team -> same call)
 const FLAV={
-  batPP:["Boundaries flowing in the powerplay.","A watchful start from the openers.","They cash in on the field restrictions.","An early wicket, but the reply is quick."],
-  batMid:["Spin into the attack, squeezing the run rate.","A partnership building through the middle overs.","They rotate the strike beautifully.","Wickets in hand — a big finish is loading."],
-  chase:["The required rate is starting to climb.","They're right on top of this chase.","Nerves jangling out in the middle.","One big over could settle it."],
-  death:["The slog overs are here.","Fielders back on the fence now.","Every run matters from here."]
+  batPP:["Boundaries flowing in the powerplay.","A watchful start from the openers.","They cash in on the field restrictions.","SIX! That's launched into the stands.","FOUR — threaded through the covers.","Edged and away for four, no slip in place."],
+  batMid:["Spin into the attack, squeezing the run rate.","A partnership building through the middle overs.","They rotate the strike beautifully.","Wickets in hand — a big finish is loading.","Dropped! A life for the batter.","The run rate is ticking along nicely."],
+  chase:["The required rate is starting to climb.","They're right on top of this chase.","Nerves jangling out in the middle.","One big over could settle it.","SIX! The chase is alive.","A dot-ball over piles on the pressure."],
+  death:["The slog overs are here.","Fielders back on the fence now.","Every run matters from here.","Yorker on the money — no room to swing.","Slower ball does the trick."],
+  wicket:["WICKET! The stumps are shattered.","GONE! Caught in the deep.","Big wicket — that's a huge blow.","Trapped in front, plumb LBW!","Caught behind! The keeper does the rest.","Run out! Terrible mix-up in the middle."]
 };
 function pick1(arr,seed){return arr[Math.abs(seed)%arr.length];}
 function innSkipLabel(meBatting,generic){
@@ -2382,6 +2383,40 @@ function checkpoints(row,T){
   return {pp:{r:Math.round(R*0.30),w:W>=3?1:0,ball:Math.min(36,fb)},
           mid:{r:Math.round(R*0.63),w:Math.floor(W*0.5),ball:Math.min(90,fb)},
           end:{r:R,w:W,ball:fb}};
+}
+// over-by-over marks: league gets a lighter set, playoffs the full call
+const LEAGUE_MARKS=[{ov:6,rf:.30,wf:.28},{ov:13,rf:.66,wf:.62},{ov:20,rf:1,wf:1}];
+const PLAYOFF_MARKS=[{ov:3,rf:.15,wf:.10},{ov:6,rf:.32,wf:.24},{ov:10,rf:.52,wf:.46},
+                     {ov:13,rf:.68,wf:.60},{ov:16,rf:.83,wf:.78},{ov:20,rf:1,wf:1}];
+function markPoint(row,m,T){const fb=T?0:parseOv(row.ov),R=row.runs,W=row.wk||0;
+  return {r:m.rf>=1?R:Math.round(R*m.rf), w:Math.min(W,m.wf>=1?W:Math.round(W*m.wf)), ball:Math.min(fb,m.ov*6)};}
+// play one innings over-by-over, narrating into the feed
+async function liveInnings(scEl,rowEl,row,side,isChase,target,hero,sd,T,tm,marks){
+  skipInn=false; innSkipLabel(row.me);
+  rowEl.classList.add('batting');
+  pushFeed(isChase?`🎯 <b>${side}</b> begin the chase — <b>${target}</b> to win.`
+                  :`▶️ <b>${side}</b> stride out to open the innings.`);
+  await wait(tm.beat);
+  const seg=tm.innDur/marks.length; let prev={r:0,w:0,ball:0};
+  for(let i=0;i<marks.length;i++){
+    const m=marks[i], to=markPoint(row,m,T), last=i===marks.length-1, gotWkt=to.w>prev.w;
+    await animRange(scEl,prev,to,seg,T);
+    if(last){
+      pushFeed(isChase?`🏁 It comes down to the final over…`
+                      :`💥 <b>${side}</b> ${row.wk>=10?'are all out for':'finish on'} <b>${row.runs}/${row.wk}</b>.`);
+      await wait(tm.beat);
+    }else{
+      const need=isChase?Math.max(0,target-to.r):0;
+      pushFeed(`<b>${side}</b> — <b>${to.r}/${to.w}</b> after ${m.ov} ov${isChase&&need>0?` · need <b>${need}</b>`:''}.`);
+      await wait(tm.beat);
+      if(gotWkt){ pushFeed(pick1(FLAV.wicket,sd+i*7)); await wait(tm.beat); }
+      else{ const pool=isChase?(i>=marks.length-2?FLAV.death:FLAV.chase):(i===0?FLAV.batPP:FLAV.batMid);
+            pushFeed(pick1(pool,(sd>>i)+i)); await wait(tm.beat); }
+      if(i===1 && hero){ pushFeed(hero); await wait(tm.beat); }
+    }
+    prev=to;
+  }
+  rowEl.classList.remove('batting');
 }
 // animate a score display from state a -> b
 function animRange(el,a,b,dur,test){
@@ -2400,8 +2435,9 @@ function animRange(el,a,b,dur,test){
 async function playMatchLive(el,l,opt){
   skipOne=false;skipInn=false;
   const fast=opt&&opt.fast, together=opt&&opt.together;
-  const innDur=fast?640:1650, pre=fast?110:480, mid=fast?180:520, post=fast?220:800, gap=fast?110:300;
-  const beat=fast?520:1250; // pause to let a commentary line be read (slower now)
+  // timings — much slower so every line can be read
+  const innDur=fast?1150:2600, pre=fast?250:900, mid=fast?450:1100, post=fast?400:1300, gap=fast?220:500;
+  const beat=fast?720:1900; // pause after each commentary line (playoffs slow & detailed)
   const c=l.card, badge=el.querySelector('.badge'), inns=el.querySelectorAll('.inn');
   const scs=[inns[0].querySelector('.sc'),inns[1].querySelector('.sc')], r0=c.rows[0], r1=c.rows[1], T=c.test;
   const CL=commLines(l);
@@ -2414,18 +2450,8 @@ async function playMatchLive(el,l,opt){
   pushFeed(CL.toss);
   await wait(Math.max(pre,beat));
 
-  if(together){
-    // league: snappier — innings tick together, still a few feed lines
-    innSkipLabel(false,true);
-    inns[0].classList.add('batting');inns[1].classList.add('batting');
-    await Promise.all([
-      animInnings(scs[0],r0.runs,r0.wk||0,T?0:parseOv(r0.ov),innDur,T),
-      animInnings(scs[1],r1.runs,r1.wk||0,T?0:parseOv(r1.ov),innDur,T)
-    ]);
-    inns[0].classList.remove('batting');inns[1].classList.remove('batting');
-    pushFeed(CL.inn1);await wait(beat);
-    if(CL.batHero){pushFeed(CL.batHero);await wait(beat);}
-  }else if(T){
+  const target=r0.runs+1;
+  if(T){
     // Test: innings totals, no overs
     skipInn=false;innSkipLabel(r0.me);
     inns[0].classList.add('batting');await animRange(scs[0],z,{r:r0.runs,w:0,ball:0},innDur,true);
@@ -2438,34 +2464,12 @@ async function playMatchLive(el,l,opt){
     inns[1].classList.remove('batting');
     if(CL.bowlHero){pushFeed(CL.bowlHero);await wait(beat);}
   }else{
-    // playoffs T20: slow, detailed ball-by-ball call across each innings
-    const cp0=checkpoints(r0,T);
-    skipInn=false;innSkipLabel(r0.me);
-    inns[0].classList.add('batting');
-    pushFeed(`▶️ <b>${CL.firstSide}</b> get us underway.`);await wait(beat);
-    await animRange(scs[0],z,cp0.pp,innDur*0.40,T);
-    pushFeed(`⚡ <b>${CL.firstSide}</b> race to <b>${cp0.pp.r}/${cp0.pp.w}</b> in the powerplay.`);await wait(beat);
-    pushFeed(pick1(FLAV.batPP,sd));await wait(beat);
-    await animRange(scs[0],cp0.pp,cp0.mid,innDur*0.33,T);
-    pushFeed(`<b>${CL.firstSide}</b> build — <b>${cp0.mid.r}/${cp0.mid.w}</b> after 12 overs.`);await wait(beat);
-    pushFeed(pick1(FLAV.batMid,sd>>2));await wait(beat);
-    await animRange(scs[0],cp0.mid,cp0.end,innDur*0.33,T);
-    inns[0].classList.remove('batting');
-    pushFeed(`💥 <b>${CL.firstSide}</b> ${r0.wk>=10?'bowled out for':'finish on'} <b>${r0.runs}/${r0.wk}</b>.`);await wait(beat);
-    if(CL.batHero){pushFeed(CL.batHero);await wait(beat);}
-    pushFeed(CL.chase);await wait(mid);
-    const cp1=checkpoints(r1,T);
-    skipInn=false;innSkipLabel(r1.me);
-    inns[1].classList.add('batting');
-    await animRange(scs[1],z,cp1.pp,innDur*0.40,T);
-    pushFeed(`<b>${CL.secondSide}</b> reply — <b>${cp1.pp.r}/${cp1.pp.w}</b> after the powerplay.`);await wait(beat);
-    if(CL.bowlHero){pushFeed(CL.bowlHero);await wait(beat);}
-    await animRange(scs[1],cp1.pp,cp1.mid,innDur*0.33,T);
-    pushFeed(`🔊 <b>${CL.secondSide}</b> at <b>${cp1.mid.r}/${cp1.mid.w}</b> — game in the balance.`);await wait(beat);
-    pushFeed(pick1(FLAV.chase,sd>>4));await wait(beat);
-    await animRange(scs[1],cp1.mid,cp1.end,innDur*0.33,T);
-    pushFeed(`🏁 Into the final over...`);await wait(beat);
-    inns[1].classList.remove('batting');
+    // T20: over-by-over. League gets a lighter set + faster clip; playoffs the full slow call.
+    const marks=together?LEAGUE_MARKS:PLAYOFF_MARKS;
+    const tm={innDur, beat};
+    await liveInnings(scs[0],inns[0],r0,CL.firstSide,false,target,CL.batHero,sd,T,tm,marks);
+    await wait(mid);
+    await liveInnings(scs[1],inns[1],r1,CL.secondSide,true,target,CL.bowlHero,sd,T,tm,marks);
   }
 
   await wait(gap);
