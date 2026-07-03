@@ -763,11 +763,9 @@
 
     <div class="set-group">
       <div class="ts-lab">Commentary voice</div>
-      <div class="seg wrap" id="voiceRow">
+      <div class="seg" id="voiceRow">
         <button class="seg-b sel" data-v="off" onclick="setVoice('off')">Off</button>
-        <button class="seg-b" data-v="uk" onclick="setVoice('uk')">UK</button>
-        <button class="seg-b" data-v="in" onclick="setVoice('in')">Indian</button>
-        <button class="seg-b" data-v="nz" onclick="setVoice('nz')">New Zealand</button>
+        <button class="seg-b" data-v="uk" onclick="setVoice('uk')">🎙 English (UK)</button>
       </div>
       <p class="sub" id="voiceHint">Read the live commentary aloud. Pick an accent.</p>
     </div>
@@ -1916,17 +1914,17 @@ function setSpeed(s){gameSpeed=s;document.querySelectorAll('#speedRow .seg-b').f
 let speakOn=false, enVoice=null, speechMuted=false, voiceAccent='off';
 const canSpeak=typeof window!=='undefined' && 'speechSynthesis' in window;
 const ACCENTS={
-  uk:{lang:'en-GB', names:/british|uk english|\(united kingdom\)/i, label:'UK'},
-  in:{lang:'en-IN', names:/india|indian/i, label:'Indian'},
-  nz:{lang:'en-NZ', names:/new zealand/i, label:'New Zealand'}
+  uk:{lang:'en-GB', names:/british|uk english|\(united kingdom\)/i, label:'English'}
 };
 function pickVoiceFor(accent){
   if(!canSpeak||accent==='off'||!ACCENTS[accent])return null;
   const vs=speechSynthesis.getVoices(), a=ACCENTS[accent];
   const langRe=new RegExp(a.lang.replace('-','[-_]'),'i');
   const match=vs.filter(v=>langRe.test(v.lang)||a.names.test(v.name));
-  // exact accent first (prefer natural/online quality), else any English fallback
+  // exact accent first (prefer natural/online quality)…
   return match.find(v=>/natural|online|premium|enhanced/i.test(v.name)) || match[0]
+      // …else fall back to a British voice (nicer for cricket than US), then any English
+      || vs.find(v=>/en[-_]GB/i.test(v.lang)||/uk english|british/i.test(v.name))
       || vs.find(v=>/natural|online/i.test(v.name)&&/^en/i.test(v.lang))
       || vs.find(v=>/^en/i.test(v.lang)) || vs[0] || null;
 }
@@ -1942,12 +1940,16 @@ function cleanForSpeech(html){
 function speak(text){
   if(!speakOn||!canSpeak||speechMuted)return;
   const t=cleanForSpeech(text); if(!t)return;
+  if(!enVoice)enVoice=pickVoiceFor(voiceAccent);   // late-loaded voices
   // stay live: drop any still-playing line so we voice the current moment, not a backlog
-  try{ if(speechSynthesis.speaking||speechSynthesis.pending) speechSynthesis.cancel(); }catch(e){}
+  let wasBusy=false;
+  try{ wasBusy=speechSynthesis.speaking||speechSynthesis.pending; if(wasBusy)speechSynthesis.cancel(); speechSynthesis.resume(); }catch(e){}
   const u=new SpeechSynthesisUtterance(t);
   if(enVoice)u.voice=enVoice;
   u.lang=(enVoice&&enVoice.lang)||(ACCENTS[voiceAccent]&&ACCENTS[voiceAccent].lang)||'en-GB'; u.rate=1.03; u.pitch=1;
-  speechSynthesis.speak(u);
+  // Chrome bug: a speak() fired in the same tick as cancel() gets swallowed — defer it
+  const go=()=>{try{speechSynthesis.resume();speechSynthesis.speak(u);}catch(e){}};
+  if(wasBusy) setTimeout(go,60); else go();
 }
 function stopSpeech(){ if(canSpeak)speechSynthesis.cancel(); }
 function setVoice(v){
@@ -1961,6 +1963,14 @@ function setVoice(v){
     document.querySelectorAll('#voiceRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.v==='off')); return; }
   enVoice=pickVoiceFor(v);
   speak("Commentary on. Let's play.");   // primes the engine (needs a user gesture)
+  updateVoiceHint(v);
+  // Chrome loads voices lazily — if none yet, re-pick shortly and refresh the hint
+  if(!enVoice || !speechSynthesis.getVoices().length){
+    setTimeout(()=>{ if(voiceAccent===v){ enVoice=pickVoiceFor(v); updateVoiceHint(v); } }, 600);
+  }
+}
+function updateVoiceHint(v){
+  const hint=$('voiceHint'); if(!hint||!ACCENTS[v])return;
   const want=ACCENTS[v], langRe=new RegExp(want.lang.replace('-','[-_]'),'i');
   const exact = enVoice && (langRe.test(enVoice.lang)||want.names.test(enVoice.name));
   hint.textContent = !enVoice ? "No speech voice available on this device."
