@@ -417,6 +417,16 @@
     border:1px solid color-mix(in srgb,var(--spark) 35%,var(--line));border-radius:20px;padding:5px 12px}
   .mode-tag:empty{display:none}
 
+  /* ---------------- settings modal ---------------- */
+  .settings-open{width:100%}
+  .settings-box{position:relative;width:100%;max-width:440px;background:var(--deep);border:1px solid var(--line2);
+    border-radius:18px;padding:20px 18px;box-shadow:0 24px 70px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:18px}
+  .settings-head{display:flex;align-items:center;justify-content:space-between;font-family:'Spline Sans Mono',monospace;
+    font-weight:800;font-size:14px;letter-spacing:.06em;color:var(--ink)}
+  .set-group .ts-lab{margin-bottom:9px}
+  .seg.wrap{flex-wrap:wrap}
+  .seg.wrap .seg-b{flex:1 1 40%;min-width:90px}
+
   /* ---------------- share card overlay ---------------- */
   .share-ov{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
     background:rgba(4,8,16,.82);backdrop-filter:blur(6px);padding:20px}
@@ -619,22 +629,7 @@
     </div>
 
     <div class="teamsel">
-      <div class="ts-lab">Match speed</div>
-      <div class="seg" id="speedRow">
-        <button class="seg-b" data-sp="chill" onclick="setSpeed('chill')">Chill</button>
-        <button class="seg-b sel" data-sp="normal" onclick="setSpeed('normal')">Normal</button>
-        <button class="seg-b" data-sp="fast" onclick="setSpeed('fast')">Fast</button>
-      </div>
-      <p class="sub" id="speedHint">Balanced commentary pace.</p>
-    </div>
-
-    <div class="teamsel">
-      <div class="ts-lab">Commentary voice</div>
-      <div class="seg" id="voiceRow">
-        <button class="seg-b sel" data-v="off" onclick="setVoice('off')">Off</button>
-        <button class="seg-b" data-v="on" onclick="setVoice('on')">🎙 English voice</button>
-      </div>
-      <p class="sub" id="voiceHint">Read the live commentary aloud in an English accent.</p>
+      <button class="btn btn-ghost settings-open" onclick="openSettings()">⚙ Settings — match speed &amp; commentary voice</button>
     </div>
 
     <div class="teamsel">
@@ -751,6 +746,34 @@
     <p class="foot">Independent fan-made game. Not affiliated with, endorsed by, or sponsored by the IPL, BCCI, any franchise or any player. IPL season stats are real (2008–2024 ball-by-ball data); ratings are a simplified model for fun.</p>
   </section>
 
+</div>
+<div class="share-ov" id="settingsOv" onclick="if(event.target===this)closeSettings()">
+  <div class="settings-box">
+    <div class="settings-head"><span>⚙ Settings</span><button class="share-x" onclick="closeSettings()" aria-label="Close">✕</button></div>
+
+    <div class="set-group">
+      <div class="ts-lab">Match speed</div>
+      <div class="seg" id="speedRow">
+        <button class="seg-b" data-sp="chill" onclick="setSpeed('chill')">Chill</button>
+        <button class="seg-b sel" data-sp="normal" onclick="setSpeed('normal')">Normal</button>
+        <button class="seg-b" data-sp="fast" onclick="setSpeed('fast')">Fast</button>
+      </div>
+      <p class="sub" id="speedHint">Balanced commentary pace.</p>
+    </div>
+
+    <div class="set-group">
+      <div class="ts-lab">Commentary voice</div>
+      <div class="seg wrap" id="voiceRow">
+        <button class="seg-b sel" data-v="off" onclick="setVoice('off')">Off</button>
+        <button class="seg-b" data-v="uk" onclick="setVoice('uk')">UK</button>
+        <button class="seg-b" data-v="in" onclick="setVoice('in')">Indian</button>
+        <button class="seg-b" data-v="nz" onclick="setVoice('nz')">New Zealand</button>
+      </div>
+      <p class="sub" id="voiceHint">Read the live commentary aloud. Pick an accent.</p>
+    </div>
+
+    <button class="btn btn-go" onclick="closeSettings()" style="margin-top:6px">Done</button>
+  </div>
 </div>
 <div class="share-ov" id="shareOv" onclick="if(event.target===this)closeShare()">
   <div class="share-box">
@@ -1889,20 +1912,25 @@ const SPEED={chill:1,normal:.6,fast:.32};
 const SPEED_HINT={chill:"Slow, detailed ball-by-ball call.",normal:"Balanced commentary pace.",fast:"Quick — skim through the games."};
 function setSpeed(s){gameSpeed=s;document.querySelectorAll('#speedRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.sp===s));$('speedHint').textContent=SPEED_HINT[s];}
 
-/* ---- spoken commentary (Web Speech API, English accent) ---- */
-let speakOn=false, enVoice=null, speechMuted=false;
+/* ---- spoken commentary (Web Speech API) with selectable accent ---- */
+let speakOn=false, enVoice=null, speechMuted=false, voiceAccent='off';
 const canSpeak=typeof window!=='undefined' && 'speechSynthesis' in window;
-function pickVoice(){
-  if(!canSpeak)return;
-  const vs=speechSynthesis.getVoices();
-  const gb=vs.filter(v=>/en[-_]GB/i.test(v.lang)||/british|uk english/i.test(v.name));
-  enVoice = gb.find(v=>/natural|online|premium|enhanced/i.test(v.name)) || gb[0]  // best British if present
-        || vs.find(v=>/en[-_]AU/i.test(v.lang))            // Australian as a fallback accent
-        || vs.find(v=>/natural|online/i.test(v.name)&&/^en/i.test(v.lang))
-        || vs.find(v=>/^en/i.test(v.lang))                 // any English
-        || vs[0] || null;
+const ACCENTS={
+  uk:{lang:'en-GB', names:/british|uk english|\(united kingdom\)/i, label:'UK'},
+  in:{lang:'en-IN', names:/india|indian/i, label:'Indian'},
+  nz:{lang:'en-NZ', names:/new zealand/i, label:'New Zealand'}
+};
+function pickVoiceFor(accent){
+  if(!canSpeak||accent==='off'||!ACCENTS[accent])return null;
+  const vs=speechSynthesis.getVoices(), a=ACCENTS[accent];
+  const langRe=new RegExp(a.lang.replace('-','[-_]'),'i');
+  const match=vs.filter(v=>langRe.test(v.lang)||a.names.test(v.name));
+  // exact accent first (prefer natural/online quality), else any English fallback
+  return match.find(v=>/natural|online|premium|enhanced/i.test(v.name)) || match[0]
+      || vs.find(v=>/natural|online/i.test(v.name)&&/^en/i.test(v.lang))
+      || vs.find(v=>/^en/i.test(v.lang)) || vs[0] || null;
 }
-if(canSpeak){ pickVoice(); speechSynthesis.onvoiceschanged=pickVoice; }
+if(canSpeak){ speechSynthesis.onvoiceschanged=()=>{ if(speakOn) enVoice=pickVoiceFor(voiceAccent); }; }
 function cleanForSpeech(html){
   return String(html)
     .replace(/<[^>]+>/g,'')                                       // strip tags
@@ -1918,21 +1946,29 @@ function speak(text){
   try{ if(speechSynthesis.speaking||speechSynthesis.pending) speechSynthesis.cancel(); }catch(e){}
   const u=new SpeechSynthesisUtterance(t);
   if(enVoice)u.voice=enVoice;
-  u.lang='en-GB'; u.rate=1.03; u.pitch=1;
+  u.lang=(enVoice&&enVoice.lang)||(ACCENTS[voiceAccent]&&ACCENTS[voiceAccent].lang)||'en-GB'; u.rate=1.03; u.pitch=1;
   speechSynthesis.speak(u);
 }
 function stopSpeech(){ if(canSpeak)speechSynthesis.cancel(); }
 function setVoice(v){
+  voiceAccent=v;
   document.querySelectorAll('#voiceRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.v===v));
-  speakOn = v==='on';
-  if(speakOn){
-    if(!canSpeak){$('voiceHint').textContent="Your browser doesn't support spoken commentary.";speakOn=false;
-      document.querySelectorAll('#voiceRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.v==='off'));return;}
-    pickVoice();
-    speak("Commentary on. Let's play.");   // primes the engine (needs a user gesture)
-    $('voiceHint').textContent = enVoice ? `Voice: ${enVoice.name}. Reads the live commentary aloud.` : "Reading commentary aloud (default voice).";
-  }else{ stopSpeech(); $('voiceHint').textContent="Read the live commentary aloud in an English accent."; }
+  speakOn = v!=='off';
+  const hint=$('voiceHint'); if(!hint)return;
+  if(!speakOn){ stopSpeech(); enVoice=null; hint.textContent="Read the live commentary aloud. Pick an accent."; return; }
+  if(!canSpeak){ hint.textContent="Your browser doesn't support spoken commentary.";
+    speakOn=false; voiceAccent='off';
+    document.querySelectorAll('#voiceRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.v==='off')); return; }
+  enVoice=pickVoiceFor(v);
+  speak("Commentary on. Let's play.");   // primes the engine (needs a user gesture)
+  const want=ACCENTS[v], langRe=new RegExp(want.lang.replace('-','[-_]'),'i');
+  const exact = enVoice && (langRe.test(enVoice.lang)||want.names.test(enVoice.name));
+  hint.textContent = !enVoice ? "No speech voice available."
+    : exact ? `Voice: ${enVoice.name}.`
+    : `No ${want.label} voice installed on this device — using ${enVoice.name}. (Tip: Microsoft Edge has built-in ${want.label} voices.)`;
 }
+function openSettings(){ $('settingsOv').classList.add('show'); }
+function closeSettings(){ $('settingsOv').classList.remove('show'); }
 
 /* ---- daily challenge (deterministic same-draft-for-everyone) + local leaderboard ---- */
 const DKEY='14-0-daily-v2'; // v2: results scoped per game mode { mode: { dateKey: result } }
