@@ -1963,9 +1963,9 @@ function setVoice(v){
   speak("Commentary on. Let's play.");   // primes the engine (needs a user gesture)
   const want=ACCENTS[v], langRe=new RegExp(want.lang.replace('-','[-_]'),'i');
   const exact = enVoice && (langRe.test(enVoice.lang)||want.names.test(enVoice.name));
-  hint.textContent = !enVoice ? "No speech voice available."
-    : exact ? `Voice: ${enVoice.name}.`
-    : `No ${want.label} voice installed on this device — using ${enVoice.name}. (Tip: Microsoft Edge has built-in ${want.label} voices.)`;
+  hint.textContent = !enVoice ? "No speech voice available on this device."
+    : exact ? `${want.label} accent on 🎙`
+    : `Commentary on — using your device's English voice.`;
 }
 function openSettings(){ $('settingsOv').classList.add('show'); }
 function closeSettings(){ $('settingsOv').classList.remove('show'); }
