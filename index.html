@@ -1942,18 +1942,17 @@ function speak(text){
   if(!speakOn||!canSpeak||speechMuted)return;
   const t=cleanForSpeech(text); if(!t)return;
   if(!enVoice)enVoice=pickVoiceFor(voiceAccent);   // late-loaded voices
-  // stay live: drop any still-playing line so we voice the current moment, not a backlog
-  let wasBusy=false;
-  try{ wasBusy=speechSynthesis.speaking||speechSynthesis.pending; if(wasBusy)speechSynthesis.cancel(); speechSynthesis.resume(); }catch(e){}
+  try{ speechSynthesis.resume(); }catch(e){}        // recover from Chrome's stuck-paused state
+  // Chrome silences a speak() that follows a cancel() — so DON'T cancel. If a line is
+  // still being read, just let it finish and skip this one (keeps audio reliable).
+  if(speechSynthesis.speaking||speechSynthesis.pending) return;
   const u=new SpeechSynthesisUtterance(t);
   if(enVoice)u.voice=enVoice;
   u.lang=(enVoice&&enVoice.lang)||(ACCENTS[voiceAccent]&&ACCENTS[voiceAccent].lang)||'en-GB';
-  u.rate=SPEECH_RATE[gameSpeed]||1.15; u.pitch=1;   // read faster on faster match speeds so lines aren't cut off
-  // Chrome bug: a speak() fired in the same tick as cancel() gets swallowed — defer it
-  const go=()=>{try{speechSynthesis.resume();speechSynthesis.speak(u);}catch(e){}};
-  if(wasBusy) setTimeout(go,60); else go();
+  u.rate=SPEECH_RATE[gameSpeed]||1.15; u.pitch=1;
+  try{ speechSynthesis.speak(u); }catch(e){}
 }
-function stopSpeech(){ if(canSpeak)speechSynthesis.cancel(); }
+function stopSpeech(){ if(canSpeak)try{speechSynthesis.cancel();}catch(e){} }
 function setVoice(v){
   voiceAccent=v;
   document.querySelectorAll('#voiceRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.v===v));
