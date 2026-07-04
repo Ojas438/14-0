@@ -417,6 +417,19 @@
     border:1px solid color-mix(in srgb,var(--spark) 35%,var(--line));border-radius:20px;padding:5px 12px}
   .mode-tag:empty{display:none}
 
+  /* ---------------- live worm chart (runs vs overs) ---------------- */
+  .worm-wrap{margin-top:14px;background:var(--deep);border:1px solid var(--line);border-radius:16px;padding:14px 16px 10px}
+  .worm-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+  .worm-t{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);font-weight:700}
+  .worm-leg{display:flex;gap:12px;flex-wrap:wrap}
+  .worm-leg .wl{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#C6D2EC;white-space:nowrap}
+  .worm-leg .wl i{width:12px;height:3px;border-radius:2px;display:inline-block}
+  .worm-svg{width:100%;height:auto;display:block;overflow:visible}
+  .worm-svg .wg{stroke:rgba(255,255,255,.06);stroke-width:1}
+  .worm-svg .waxis{stroke:rgba(255,255,255,.16);stroke-width:1}
+  .worm-svg .wlab{fill:var(--mute);font-size:8px;font-family:'Spline Sans Mono',monospace}
+  .worm-svg polyline{transition:none}
+
   /* ---------------- settings modal ---------------- */
   .settings-open{width:100%}
   .settings-box{position:relative;width:100%;max-width:440px;background:var(--deep);border:1px solid var(--line2);
@@ -699,6 +712,11 @@
     <div id="commFeed" class="comm-feed" style="display:none">
       <div class="cf-head"><span class="cf-live" id="cfLive"><span class="dot"></span>LIVE</span><span class="cf-title" id="cfTitle"></span></div>
       <div class="cf-body" id="cfBody"></div>
+    </div>
+
+    <div id="wormWrap" class="worm-wrap" style="display:none">
+      <div class="worm-head"><span class="worm-t">Runs worm</span><span class="worm-leg" id="wormLeg"></span></div>
+      <svg id="wormSvg" class="worm-svg" viewBox="0 0 320 150" preserveAspectRatio="none" aria-hidden="true"></svg>
     </div>
 
     <div id="skipRow" class="skip-2">
@@ -2075,7 +2093,7 @@ function resetGame(){
   $('spinBtn').disabled=false;$('spinBtn').textContent="Spin";
   $('skT').disabled=true;$('skE').disabled=true;$('choices').innerHTML="";
   $('pickbar').style.display="none";resetPickFilter();
-  $('dailyTag').style.display="none";$('skipsRow').style.display="";
+  $('dailyTag').style.display="none";$('skipsRow').style.display="";wormHide();
   renderDots();renderSheet();show('s-draft');
 }
 
@@ -2564,7 +2582,7 @@ async function runLive(s){
   $('poLine').className="po-line";$('poLine').innerHTML="";
   setBoard(0,0);$('lgRec').textContent="0–0";$('pos').textContent="";
   renderTable(tableAt(s.table,0,0),0);
-  showFeed(true);clearFeed();
+  showFeed(true);clearFeed();wormHide();
 
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){
     renderLeague(s,false);setBoard(s.wins,s.losses);$('lgRec').textContent=`${s.wins}–${s.losses}`;setPos(s);
@@ -2634,6 +2652,39 @@ function feedFinish(s){
     lostElim:"Knocked out in the Eliminator.",missed:"Missed the playoffs this season."}[s.outcome];
   if(out)pushFeed(out, s.outcome==="champ"?"gold":(s.seed?"":"lose"));
 }
+/* ---- live worm chart: cumulative runs vs overs, one line per innings ---- */
+let worm=null;
+function wormReset(l){
+  const c=l.card;
+  const side=(row)=> row.me ? {color:FR[myTeam].c, name:FR[myTeam].name} : {color:c.oppCol, name:c.opp};
+  const s0=side(c.rows[0]), s1=side(c.rows[1]);
+  worm={series:[{pts:[],color:s0.color,name:s0.name},{pts:[],color:s1.color,name:s1.name}]};
+  const leg=$('wormLeg'); if(leg)leg.innerHTML=[s0,s1].map(s=>`<span class="wl"><i style="background:${s.color}"></i>${s.name}</span>`).join('');
+  wormDraw();
+}
+function wormPoint(idx,over,runs){ if(!worm||!worm.series[idx])return; worm.series[idx].pts.push({over,runs}); wormDraw(); }
+function wormDraw(){
+  const svg=$('wormSvg'); if(!svg||!worm)return;
+  const PX0=30,PX1=312,PY0=8,PY1=128,OVMAX=20;
+  let mx=160; worm.series.forEach(s=>s.pts.forEach(p=>{ if(p.runs+12>mx)mx=p.runs+12; }));
+  mx=Math.ceil(mx/40)*40;
+  const X=ov=>PX0+(Math.min(ov,OVMAX)/OVMAX)*(PX1-PX0);
+  const Y=r=>PY1-(Math.min(r,mx)/mx)*(PY1-PY0);
+  let h='';
+  for(let r=0;r<=mx;r+=40){const y=Y(r);h+=`<line class="wg" x1="${PX0}" y1="${y}" x2="${PX1}" y2="${y}"/><text class="wlab" x="${PX0-4}" y="${y+3}" text-anchor="end">${r}</text>`;}
+  h+=`<line class="waxis" x1="${PX0}" y1="${PY1}" x2="${PX1}" y2="${PY1}"/>`;
+  for(let ov=0;ov<=OVMAX;ov+=5){const x=X(ov);h+=`<text class="wlab" x="${x}" y="${PY1+13}" text-anchor="middle">${ov}</text>`;}
+  worm.series.forEach(s=>{
+    if(!s.pts.length)return;
+    const pts=[{over:0,runs:0}].concat(s.pts);
+    const d=pts.map(p=>`${X(p.over).toFixed(1)},${Y(p.runs).toFixed(1)}`).join(' ');
+    h+=`<polyline points="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const last=s.pts[s.pts.length-1];
+    h+=`<circle cx="${X(last.over).toFixed(1)}" cy="${Y(last.runs).toFixed(1)}" r="3.2" fill="${s.color}"/>`;
+  });
+  svg.innerHTML=h;
+}
+function wormHide(){const w=$('wormWrap'); if(w)w.style.display='none'; worm=null;}
 /* base commentary lines from a scorecard */
 function commLines(l){
   const c=l.card, ME=FR[myTeam].name, opp=c.opp, T=c.test, h=c.hero||{};
@@ -2690,6 +2741,7 @@ async function liveInnings(scEl,rowEl,row,side,isChase,target,hero,sd,T,tm,marks
   for(let i=0;i<marks.length;i++){
     const m=marks[i], to=markPoint(row,m,T), last=i===marks.length-1, gotWkt=to.w>prev.w;
     await animRange(scEl,prev,to,seg,T);
+    if(!T) wormPoint(isChase?1:0, m.ov, to.r);   // plot the worm as the score climbs
     if(last){
       pushFeed(isChase?`🏁 It comes down to the final over…`
                       :`💥 <b>${side}</b> ${row.wk>=10?'are all out for':'finish on'} <b>${row.runs}/${row.wk}</b>.`);
@@ -2736,6 +2788,7 @@ async function playMatchLive(el,l,opt){
   const showInnSkip=$('skipInnBtn');
   if(showInnSkip)showInnSkip.style.visibility="visible";
   feedHead(l);clearFeed();
+  if(!T){ wormReset(l); $('wormWrap').style.display=''; } else { wormHide(); }
   badge.innerHTML=`<span class="res live"><span class="dot"></span>LIVE</span>`;
   pushFeed(CL.toss);
   await wait(Math.max(pre,beat));
