@@ -1906,8 +1906,8 @@ const MODE_HINT={overall:"See a single overall rating (0–100) for each player.
 function setMode(m){mode=m;document.querySelectorAll('#modeRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.m===m));$('modeHint').textContent=MODE_HINT[m];renderModeTag();if(typeof renderDaily==='function')renderDaily();}
 function renderModeTag(){const el=$('modeTag');if(el)el.textContent=(MODE_NAME[mode]||'')+' mode';}
 let gameSpeed='normal';
-const SPEED={chill:1,normal:.6,fast:.32};
-const SPEECH_RATE={chill:1.0,normal:1.25,fast:1.7}; // voice reads quicker at faster match speeds
+const SPEED={chill:1,normal:.6,fast:.14};
+const SPEECH_RATE={chill:1.0,normal:1.25,fast:2.0}; // voice reads quicker at faster match speeds
 const SPEED_HINT={chill:"Slow, detailed ball-by-ball call.",normal:"Balanced commentary pace.",fast:"Quick — skim through the games."};
 function setSpeed(s){gameSpeed=s;document.querySelectorAll('#speedRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.sp===s));$('speedHint').textContent=SPEED_HINT[s];}
 
