@@ -1907,6 +1907,7 @@ function setMode(m){mode=m;document.querySelectorAll('#modeRow .seg-b').forEach(
 function renderModeTag(){const el=$('modeTag');if(el)el.textContent=(MODE_NAME[mode]||'')+' mode';}
 let gameSpeed='normal';
 const SPEED={chill:1,normal:.6,fast:.32};
+const SPEECH_RATE={chill:1.0,normal:1.25,fast:1.7}; // voice reads quicker at faster match speeds
 const SPEED_HINT={chill:"Slow, detailed ball-by-ball call.",normal:"Balanced commentary pace.",fast:"Quick — skim through the games."};
 function setSpeed(s){gameSpeed=s;document.querySelectorAll('#speedRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.sp===s));$('speedHint').textContent=SPEED_HINT[s];}
 
@@ -1946,7 +1947,8 @@ function speak(text){
   try{ wasBusy=speechSynthesis.speaking||speechSynthesis.pending; if(wasBusy)speechSynthesis.cancel(); speechSynthesis.resume(); }catch(e){}
   const u=new SpeechSynthesisUtterance(t);
   if(enVoice)u.voice=enVoice;
-  u.lang=(enVoice&&enVoice.lang)||(ACCENTS[voiceAccent]&&ACCENTS[voiceAccent].lang)||'en-GB'; u.rate=1.03; u.pitch=1;
+  u.lang=(enVoice&&enVoice.lang)||(ACCENTS[voiceAccent]&&ACCENTS[voiceAccent].lang)||'en-GB';
+  u.rate=SPEECH_RATE[gameSpeed]||1.15; u.pitch=1;   // read faster on faster match speeds so lines aren't cut off
   // Chrome bug: a speak() fired in the same tick as cancel() gets swallowed — defer it
   const go=()=>{try{speechSynthesis.resume();speechSynthesis.speak(u);}catch(e){}};
   if(wasBusy) setTimeout(go,60); else go();
