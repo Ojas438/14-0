@@ -715,7 +715,7 @@
     </div>
 
     <div id="wormWrap" class="worm-wrap" style="display:none">
-      <div class="worm-head"><span class="worm-t">Runs worm</span><span class="worm-leg" id="wormLeg"></span></div>
+      <div class="worm-head"><span class="worm-t">Win probability</span><span class="worm-leg" id="wormLeg"></span></div>
       <svg id="wormSvg" class="worm-svg" viewBox="0 0 320 150" preserveAspectRatio="none" aria-hidden="true"></svg>
     </div>
 
@@ -2652,37 +2652,49 @@ function feedFinish(s){
     lostElim:"Knocked out in the Eliminator.",missed:"Missed the playoffs this season."}[s.outcome];
   if(out)pushFeed(out, s.outcome==="champ"?"gold":(s.seed?"":"lose"));
 }
-/* ---- live worm chart: cumulative runs vs overs, one line per innings ---- */
+/* ---- live win-probability chart: MY team's chance to win, over the whole match ---- */
 let worm=null;
+// situational win% for MY team at a given moment, easing toward the known final result over time
+function winProb(row,isChase,target,over,runs,wkts,myWon){
+  const prog=(isChase?0.5:0)+(Math.min(over,20)/20)*0.5;    // 0..1 through the match
+  let sit;
+  if(!isChase){
+    const par=165*(over/20)||1, ratio=runs/par;
+    let bat=0.5+(ratio-1)*0.85-Math.max(0,wkts-2)*0.03;
+    bat=Math.max(0.15,Math.min(0.85,bat));
+    sit=row.me?bat:1-bat;                                     // opponent batting -> invert
+  }else{
+    const need=Math.max(0,target-runs), ballsLeft=Math.max(1,120-over*6), wktsLeft=Math.max(0,10-wkts);
+    let chase;
+    if(need<=0) chase=1;
+    else{ const rrr=need/(ballsLeft/6); chase=0.5+(8.5-rrr)*0.07+(wktsLeft-6)*0.04; chase=Math.max(0.05,Math.min(0.95,chase)); }
+    sit=row.me?chase:1-chase;                                 // opponent chasing -> my win = 1 - their chase
+  }
+  const w=Math.pow(prog,1.6), p=sit*(1-w)+(myWon?1:0)*w;      // converge to the real result
+  return Math.max(2,Math.min(98,Math.round(p*100)));
+}
 function wormReset(l){
-  const c=l.card;
-  const side=(row)=> row.me ? {color:FR[myTeam].c, name:FR[myTeam].name} : {color:c.oppCol, name:c.opp};
-  const s0=side(c.rows[0]), s1=side(c.rows[1]);
-  worm={series:[{pts:[],color:s0.color,name:s0.name},{pts:[],color:s1.color,name:s1.name}]};
-  const leg=$('wormLeg'); if(leg)leg.innerHTML=[s0,s1].map(s=>`<span class="wl"><i style="background:${s.color}"></i>${s.name}</span>`).join('');
+  worm={pts:[{x:0,p:50}], color:FR[myTeam].c, me:FR[myTeam].name, opp:l.card.opp};
   wormDraw();
 }
-function wormPoint(idx,over,runs){ if(!worm||!worm.series[idx])return; worm.series[idx].pts.push({over,runs}); wormDraw(); }
+function wormPoint(x,prob){ if(!worm)return; worm.pts.push({x,p:prob}); wormDraw(); }
 function wormDraw(){
   const svg=$('wormSvg'); if(!svg||!worm)return;
-  const PX0=30,PX1=312,PY0=8,PY1=128,OVMAX=20;
-  let mx=160; worm.series.forEach(s=>s.pts.forEach(p=>{ if(p.runs+12>mx)mx=p.runs+12; }));
-  mx=Math.ceil(mx/40)*40;
-  const X=ov=>PX0+(Math.min(ov,OVMAX)/OVMAX)*(PX1-PX0);
-  const Y=r=>PY1-(Math.min(r,mx)/mx)*(PY1-PY0);
+  const PX0=30,PX1=312,PY0=8,PY1=128,XMAX=40;
+  const X=o=>PX0+(Math.min(o,XMAX)/XMAX)*(PX1-PX0);
+  const Y=p=>PY1-(Math.max(0,Math.min(100,p))/100)*(PY1-PY0);
   let h='';
-  for(let r=0;r<=mx;r+=40){const y=Y(r);h+=`<line class="wg" x1="${PX0}" y1="${y}" x2="${PX1}" y2="${y}"/><text class="wlab" x="${PX0-4}" y="${y+3}" text-anchor="end">${r}</text>`;}
-  h+=`<line class="waxis" x1="${PX0}" y1="${PY1}" x2="${PX1}" y2="${PY1}"/>`;
-  for(let ov=0;ov<=OVMAX;ov+=5){const x=X(ov);h+=`<text class="wlab" x="${x}" y="${PY1+13}" text-anchor="middle">${ov}</text>`;}
-  worm.series.forEach(s=>{
-    if(!s.pts.length)return;
-    const pts=[{over:0,runs:0}].concat(s.pts);
-    const d=pts.map(p=>`${X(p.over).toFixed(1)},${Y(p.runs).toFixed(1)}`).join(' ');
-    h+=`<polyline points="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
-    const last=s.pts[s.pts.length-1];
-    h+=`<circle cx="${X(last.over).toFixed(1)}" cy="${Y(last.runs).toFixed(1)}" r="3.2" fill="${s.color}"/>`;
-  });
+  [0,25,50,75,100].forEach(v=>{const y=Y(v);h+=`<line class="${v===50?'waxis':'wg'}" x1="${PX0}" y1="${y}" x2="${PX1}" y2="${y}"/><text class="wlab" x="${PX0-4}" y="${y+3}" text-anchor="end">${v}</text>`;});
+  h+=`<line class="wg" x1="${X(20)}" y1="${PY0}" x2="${X(20)}" y2="${PY1}"/>`;   // innings break
+  [0,10,20,30,40].forEach(o=>{h+=`<text class="wlab" x="${X(o)}" y="${PY1+13}" text-anchor="middle">${o===20?'inns':o}</text>`;});
+  const pts=worm.pts, cur=pts[pts.length-1];
+  // shaded area under the line
+  const area=`${X(0)},${Y(0)} `+pts.map(p=>`${X(p.x).toFixed(1)},${Y(p.p).toFixed(1)}`).join(' ')+` ${X(cur.x).toFixed(1)},${Y(0)}`;
+  h+=`<polygon points="${area}" fill="${worm.color}" fill-opacity="0.12"/>`;
+  h+=`<polyline points="${pts.map(p=>`${X(p.x).toFixed(1)},${Y(p.p).toFixed(1)}`).join(' ')}" fill="none" stroke="${worm.color}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`;
+  h+=`<circle cx="${X(cur.x).toFixed(1)}" cy="${Y(cur.p).toFixed(1)}" r="3.4" fill="${worm.color}"/>`;
   svg.innerHTML=h;
+  const leg=$('wormLeg'); if(leg)leg.innerHTML=`<span class="wl"><i style="background:${worm.color}"></i>${worm.me} <b style="color:#fff">${cur.p}%</b></span>`;
 }
 function wormHide(){const w=$('wormWrap'); if(w)w.style.display='none'; worm=null;}
 /* base commentary lines from a scorecard */
@@ -2731,7 +2743,7 @@ const PLAYOFF_MARKS=[{ov:3,rf:.15,wf:.10},{ov:6,rf:.32,wf:.24},{ov:10,rf:.52,wf:
 function markPoint(row,m,T){const fb=T?0:parseOv(row.ov),R=row.runs,W=row.wk||0;
   return {r:m.rf>=1?R:Math.round(R*m.rf), w:Math.min(W,m.wf>=1?W:Math.round(W*m.wf)), ball:Math.min(fb,m.ov*6)};}
 // play one innings over-by-over, narrating into the feed
-async function liveInnings(scEl,rowEl,row,side,isChase,target,hero,sd,T,tm,marks){
+async function liveInnings(scEl,rowEl,row,side,isChase,target,hero,sd,T,tm,marks,win){
   skipInn=false; speechMuted=false; innSkipLabel(row.me);
   rowEl.classList.add('batting');
   pushFeed(isChase?`🎯 <b>${side}</b> begin the chase — <b>${target}</b> to win.`
@@ -2741,7 +2753,7 @@ async function liveInnings(scEl,rowEl,row,side,isChase,target,hero,sd,T,tm,marks
   for(let i=0;i<marks.length;i++){
     const m=marks[i], to=markPoint(row,m,T), last=i===marks.length-1, gotWkt=to.w>prev.w;
     await animRange(scEl,prev,to,seg,T);
-    if(!T) wormPoint(isChase?1:0, m.ov, to.r);   // plot the worm as the score climbs
+    if(!T) wormPoint(isChase?20+m.ov:m.ov, winProb(row,isChase,target,m.ov,to.r,to.w,win));   // update win probability
     if(last){
       pushFeed(isChase?`🏁 It comes down to the final over…`
                       :`💥 <b>${side}</b> ${row.wk>=10?'are all out for':'finish on'} <b>${row.runs}/${row.wk}</b>.`);
@@ -2810,9 +2822,9 @@ async function playMatchLive(el,l,opt){
     // T20: over-by-over. League gets a lighter set + faster clip; playoffs the full slow call.
     const marks=together?LEAGUE_MARKS:PLAYOFF_MARKS;
     const tm={innDur, beat};
-    await liveInnings(scs[0],inns[0],r0,CL.firstSide,false,target,CL.batHero,sd,T,tm,marks);
+    await liveInnings(scs[0],inns[0],r0,CL.firstSide,false,target,CL.batHero,sd,T,tm,marks,l.win);
     await wait(mid);
-    await liveInnings(scs[1],inns[1],r1,CL.secondSide,true,target,CL.bowlHero,sd,T,tm,marks);
+    await liveInnings(scs[1],inns[1],r1,CL.secondSide,true,target,CL.bowlHero,sd,T,tm,marks,l.win);
   }
 
   await wait(gap);
