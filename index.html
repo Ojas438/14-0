@@ -2495,7 +2495,15 @@ const jump=()=>skipping||skipOne||skipInn; // jump the *current* innings/wait to
 const fmtOv=b=>Math.floor(b/6)+"."+(b%6);
 const parseOv=o=>{const m=String(o).match(/(\d+)\.(\d)/);return m?(+m[1])*6+(+m[2]):120;};
 const scHTML=(r,w,b,test)=> test?`${r}`:`${r}/${w}<span class="ov">(${fmtOv(b)})</span>`;
-function wait(ms){return new Promise(res=>{const t0=performance.now();(function c(){if(jump()||performance.now()-t0>=ms)return res();requestAnimationFrame(c);})();});}
+function wait(ms){return new Promise(res=>{const t0=performance.now();(function c(){
+  if(jump())return res();
+  const el=performance.now()-t0;
+  // when the voice is on, hold on each line until it's finished being read — keeps audio matched to the on-screen commentary
+  const reading = speakOn && !speechMuted && canSpeak && speechSynthesis.speaking;
+  if(el>=ms && !reading) return res();
+  if(el>=ms+12000) return res();  // safety: never hang if speech doesn't end
+  requestAnimationFrame(c);
+})();});}
 function animInnings(el,runs,wk,balls,dur,test){
   return new Promise(res=>{
     if(jump()){el.innerHTML=scHTML(runs,wk,balls,test);return res();}
