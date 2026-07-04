@@ -1907,7 +1907,7 @@ function setMode(m){mode=m;document.querySelectorAll('#modeRow .seg-b').forEach(
 function renderModeTag(){const el=$('modeTag');if(el)el.textContent=(MODE_NAME[mode]||'')+' mode';}
 let gameSpeed='normal';
 const SPEED={chill:1,normal:.6,fast:.14};
-const SPEECH_RATE={chill:1.0,normal:1.25,fast:10}; // Fast = 10x, the Web Speech API maximum
+const SPEECH_RATE={chill:1.1,normal:1.35,fast:10}; // Fast = 10x, the Web Speech API maximum
 const SPEED_HINT={chill:"Slow, detailed ball-by-ball call.",normal:"Balanced commentary pace.",fast:"Quick — skim through the games."};
 function setSpeed(s){gameSpeed=s;document.querySelectorAll('#speedRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.sp===s));$('speedHint').textContent=SPEED_HINT[s];}
 
@@ -1938,21 +1938,27 @@ function cleanForSpeech(html){
     .replace(/[–—]/g,' to ')                                      // 13–1 -> 13 to 1
     .replace(/·/g,', ').replace(/\s+/g,' ').trim();
 }
+let speakQ=0; // lines queued-but-not-finished (my own counter; engine's is unreliable)
 function speak(text){
   if(!speakOn||!canSpeak||speechMuted)return;
   const t=cleanForSpeech(text); if(!t)return;
   if(!enVoice)enVoice=pickVoiceFor(voiceAccent);   // late-loaded voices
   try{ speechSynthesis.resume(); }catch(e){}        // recover from Chrome's stuck-paused state
-  // Chrome silences a speak() that follows a cancel() — so DON'T cancel. If a line is
-  // still being read, just let it finish and skip this one (keeps audio reliable).
-  if(speechSynthesis.speaking||speechSynthesis.pending) return;
+  // Chrome silences a speak() that follows cancel(), so we never cancel — we QUEUE.
+  // Buffer a few lines so slightly-overlapping ones still get read (no skipping on Chill);
+  // cap it so faster speeds don't build a runaway backlog.
+  const cap = gameSpeed==='fast' ? 1 : 5;
+  if(speakQ>=cap) return;
   const u=new SpeechSynthesisUtterance(t);
   if(enVoice)u.voice=enVoice;
   u.lang=(enVoice&&enVoice.lang)||(ACCENTS[voiceAccent]&&ACCENTS[voiceAccent].lang)||'en-GB';
   u.rate=SPEECH_RATE[gameSpeed]||1.15; u.pitch=1;
-  try{ speechSynthesis.speak(u); }catch(e){}
+  speakQ++;
+  let dec=false; const done=()=>{ if(dec)return; dec=true; speakQ=Math.max(0,speakQ-1); };
+  u.onend=done; u.onerror=done; setTimeout(done,9000); // safety if onend never fires
+  try{ speechSynthesis.speak(u); }catch(e){ done(); }
 }
-function stopSpeech(){ if(canSpeak)try{speechSynthesis.cancel();}catch(e){} }
+function stopSpeech(){ speakQ=0; if(canSpeak)try{speechSynthesis.cancel();}catch(e){} }
 function setVoice(v){
   voiceAccent=v;
   document.querySelectorAll('#voiceRow .seg-b').forEach(b=>b.classList.toggle('sel',b.dataset.v===v));
