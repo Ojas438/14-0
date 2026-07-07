@@ -2674,7 +2674,7 @@ function winProb(row,isChase,target,over,runs,wkts,myWon){
   return Math.max(2,Math.min(98,Math.round(p*100)));
 }
 function wormReset(l){
-  worm={pts:[{x:0,p:50}], color:FR[myTeam].c, me:FR[myTeam].name, opp:l.card.opp};
+  worm={pts:[{x:0,p:50}], me:{color:FR[myTeam].c,name:FR[myTeam].name}, opp:{color:l.card.oppCol,name:l.card.opp}};
   wormDraw();
 }
 function wormPoint(x,prob){ if(!worm)return; worm.pts.push({x,p:prob}); wormDraw(); }
@@ -2688,13 +2688,21 @@ function wormDraw(){
   h+=`<line class="wg" x1="${X(20)}" y1="${PY0}" x2="${X(20)}" y2="${PY1}"/>`;   // innings break
   [0,10,20,30,40].forEach(o=>{h+=`<text class="wlab" x="${X(o)}" y="${PY1+13}" text-anchor="middle">${o===20?'inns':o}</text>`;});
   const pts=worm.pts, cur=pts[pts.length-1];
-  // shaded area under the line
+  const line=(mapP,col,wide)=>{
+    const d=pts.map(p=>`${X(p.x).toFixed(1)},${Y(mapP(p.p)).toFixed(1)}`).join(' ');
+    const c=pts[pts.length-1];
+    return `<polyline points="${d}" fill="none" stroke="${col}" stroke-width="${wide?2.6:2}" stroke-linejoin="round" stroke-linecap="round" ${wide?'':'stroke-opacity="0.9"'}/>`
+         + `<circle cx="${X(c.x).toFixed(1)}" cy="${Y(mapP(c.p)).toFixed(1)}" r="3.2" fill="${col}"/>`;
+  };
+  // faint fill under MY line, then both teams' probability lines (opp = 100 - mine)
   const area=`${X(0)},${Y(0)} `+pts.map(p=>`${X(p.x).toFixed(1)},${Y(p.p).toFixed(1)}`).join(' ')+` ${X(cur.x).toFixed(1)},${Y(0)}`;
-  h+=`<polygon points="${area}" fill="${worm.color}" fill-opacity="0.12"/>`;
-  h+=`<polyline points="${pts.map(p=>`${X(p.x).toFixed(1)},${Y(p.p).toFixed(1)}`).join(' ')}" fill="none" stroke="${worm.color}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`;
-  h+=`<circle cx="${X(cur.x).toFixed(1)}" cy="${Y(cur.p).toFixed(1)}" r="3.4" fill="${worm.color}"/>`;
+  h+=`<polygon points="${area}" fill="${worm.me.color}" fill-opacity="0.1"/>`;
+  h+=line(p=>100-p, worm.opp.color, false);   // opponent
+  h+=line(p=>p, worm.me.color, true);          // my team on top
   svg.innerHTML=h;
-  const leg=$('wormLeg'); if(leg)leg.innerHTML=`<span class="wl"><i style="background:${worm.color}"></i>${worm.me} <b style="color:#fff">${cur.p}%</b></span>`;
+  const leg=$('wormLeg'); if(leg)leg.innerHTML=
+    `<span class="wl"><i style="background:${worm.me.color}"></i>${worm.me.name} <b style="color:#fff">${cur.p}%</b></span>`+
+    `<span class="wl"><i style="background:${worm.opp.color}"></i>${worm.opp.name} <b style="color:#fff">${100-cur.p}%</b></span>`;
 }
 function wormHide(){const w=$('wormWrap'); if(w)w.style.display='none'; worm=null;}
 /* base commentary lines from a scorecard */
